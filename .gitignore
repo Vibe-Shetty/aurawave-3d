@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Build outputs
+dist/
+dist-electron/
+dev-dist/
+build/
+win-unpacked/
+*.exe
+*.zip
+payload.zip
+
+# Environment & Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# OS specific
+.DS_Store
+Thumbs.db

@@ -1,0 +1,45 @@
+{
+  "name": "prototype-3-installer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build:web": "vite build",
+    "build:exe": "vite build && electron-builder",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.aurawave.setup",
+    "productName": "AuraWave 3D Setup",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "extraResources": [
+      "payload.zip"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "../prototype-3/public/pwa-512x512.png"
+    }
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.0",
+    "lucide-react": "^1.33.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0",
+    "vite-plugin-electron": "^1.1.1",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  }
+}

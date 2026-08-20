@@ -1,0 +1,382 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Base Container */
+.installer-container {
+  width: 100vw;
+  height: 100vh;
+  background: #0f1115; /* Riot dark background */
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #333;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+  border-radius: 8px; /* Slightly rounded for modern OS */
+  overflow: hidden;
+}
+
+/* Custom Titlebar */
+.titlebar {
+  height: 32px;
+  background: #1a1c23;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #2a2c35;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  background: transparent;
+  border: none;
+  color: #888;
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.window-controls button:hover {
+  background: #2a2c35;
+  color: #fff;
+}
+
+.window-controls button.close-btn:hover {
+  background: #e53935;
+  color: #fff;
+}
+
+/* Main Content Split */
+.installer-content {
+  display: flex;
+  flex: 1;
+  height: calc(100% - 32px);
+}
+
+/* Left Panel - Branding/Art */
+.left-panel {
+  flex: 1.2;
+  background: linear-gradient(135deg, #090a0f 0%, #151821 100%);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 40px;
+  border-right: 1px solid #2a2c35;
+}
+
+.branding h1 {
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+}
+
+.branding p {
+  color: #888;
+  font-size: 14px;
+}
+
+.mascot-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.mascot-video {
+  width: 150%;
+  height: 150%;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 20px rgba(0, 255, 255, 0.2));
+  transform: translate(-15%, 5%);
+  /* Fade out the edges (especially bottom right) to hide watermarks and blend better */
+  mask-image: radial-gradient(circle at 40% 40%, black 50%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at 40% 40%, black 50%, transparent 80%);
+}
+
+/* Right Panel - Form */
+.right-panel {
+  flex: 1;
+  background: #ECE8E1; /* Valorant style light panel for the form */
+  color: #111;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+
+.right-panel h2 {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 30px;
+  text-align: center;
+  color: #111;
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.path-input-wrapper {
+  display: flex;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.path-input-wrapper:hover {
+  border-color: #999;
+}
+
+.path-input-wrapper input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 12px 16px;
+  color: #333;
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+}
+
+.path-input-wrapper .icon-btn {
+  background: #f5f5f5;
+  border: none;
+  border-left: 1px solid #ccc;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.path-input-wrapper .icon-btn:hover {
+  background: #e0e0e0;
+  color: #111;
+}
+
+/* Custom Checkbox */
+.cyber-checkbox {
+  display: flex;
+  align-items: center;
+  font-size: 13px !important;
+  color: #333 !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.cyber-checkbox input {
+  display: none;
+}
+
+.checkmark {
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  color: transparent;
+  transition: all 0.2s;
+}
+
+.cyber-checkbox:hover .checkmark {
+  border-color: #FF4655; /* Riot Red */
+}
+
+.cyber-checkbox input:checked ~ .checkmark {
+  background: #FF4655;
+  border-color: #FF4655;
+  color: #fff;
+}
+
+/* Buttons */
+.action-area {
+  margin-top: 40px;
+  display: flex;
+  justify-content: center;
+}
+
+.cyber-btn {
+  background: #FF4655;
+  color: #fff;
+  border: none;
+  padding: 16px 40px;
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.cyber-btn:hover {
+  background: #ff5c6a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(255, 70, 85, 0.4);
+}
+
+.cyber-btn:active {
+  transform: translateY(0);
+}
+
+/* Progress & Success */
+.progress-screen, .success-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background: #ddd;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #FF4655;
+  transition: width 0.3s ease;
+}
+
+.status-text {
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+.success-icon {
+  margin-bottom: 24px;
+  width: 80px;
+  height: 80px;
+  background: rgba(0, 255, 255, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(0, 255, 255, 0.3);
+}
+
+.success-screen h2 {
+  margin-bottom: 12px;
+}
+
+.success-screen p {
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.launch-btn {
+  background: #0ff;
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto;
+}
+
+.launch-btn:hover {
+  background: #33ffff;
+  box-shadow: 0 4px 15px rgba(0, 255, 255, 0.4);
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-out forwards;
+}
+
+.fade-out {
+  animation: fadeOut 2s ease forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.fade-out-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}

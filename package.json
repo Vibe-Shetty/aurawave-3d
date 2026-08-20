@@ -1,0 +1,41 @@
+{
+  "name": "prototype-2",
+  "version": "1.0.0",
+  "description": "An audio-reactive 3D web application inspired by **Video 4 (Viral Music Video Web App)** and **Video 6 (Insane Three.js Experiences)**.",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build:web": "vite build",
+    "build:exe": "npm run build:web && electron-builder",
+    "start": "electron .",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "AuraWave Team",
+  "license": "ISC",
+  "type": "module",
+  "build": {
+    "appId": "com.aurawave.desktop",
+    "productName": "AuraWave 3D",
+    "directories": {
+      "output": "../releases"
+    },
+    "extraResources": [
+      ".env"
+    ],
+    "win": {
+      "target": "zip",
+      "icon": "public/pwa-512x512.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^5.0.0",
+    "vite-plugin-pwa": "^1.3.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.17.1",
+    "dotenv": "^17.4.2"
+  }
+}

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraWave 3D - AI & Three.js Music Experience</title>
+  <meta name="description" content="Immersive 3D audio-reactive visualizer with WebGL, Web Audio API, and Gemini AI mood styling.">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="apple-touch-icon" href="/pwa-192x192.png">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Three.js Local Bundle (Instant & 100% Reliable Offline/Online) -->
+  <script src="./three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+  <!-- WebGL Background Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- Persistent Master Audio Element (CORS enabled for Web Audio API analysis) -->
+  <audio id="master-audio" crossorigin="anonymous" preload="auto"></audio>
+
+  <!-- HUD Overlay -->
+  <div class="hud-overlay">
+    
+    <!-- Top Header -->
+    <header class="hud-header interactive">
+      <div class="logo-badge">
+        <div class="pulse-dot"></div>
+        <div class="logo-text">
+          <h1>AuraWave 3D</h1>
+          <span>Three.js + Gemini AI</span>   
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <button id="playlist-toggle-btn" class="hud-btn" title="Toggle Playlist & Music Queue">
+          <span>📑</span> <span id="playlist-btn-label">Playlist</span> <span id="playlist-count-badge" class="playlist-badge">4</span>
+        </button>
+        <button id="record-btn" class="hud-btn" title="Record video clip for social media">
+          <span>🎥</span> <span id="record-text">Record Clip</span>
+        </button>
+        <button id="ai-theme-btn" class="hud-btn primary">
+          <span>✨</span> AI Vibe Generator
+        </button>
+      </div>
+    </header>
+
+    <!-- Center HUD Info -->
+    <section class="hud-center">
+      <div id="vibe-tag" class="vibe-tag">Cyberpunk Rhythmic Surge</div>
+      <h2 id="viral-tagline">Feel the Music in 3D</h2>
+      <p id="vibe-description">Real-time particle vortex reacting to synthesized frequencies and audio FFT spectrums.</p>
+    </section>
+
+    <!-- Bottom Audio Controller Dock -->
+    <footer class="hud-footer interactive">
+      <div class="audio-dock">
+
+        <!-- Uploaded / Active Track Details Chip -->
+        <div id="uploaded-track-chip" class="uploaded-track-chip" style="display: none;">
+          <span class="chip-icon">🎵</span>
+          <div class="chip-info">
+            <span id="chip-title" class="chip-title">Song Title</span>
+            <span id="chip-meta" class="chip-meta">Artist • Language</span>
+          </div>
+        </div>
+
+        <!-- Timeline Progress Bar & Scrubber -->
+        <div class="timeline-wrapper">
+          <span id="current-time" class="time-label">0:00</span>
+          <div id="timeline-container" class="timeline-container" title="Click or drag to seek">
+            <div id="timeline-buffered" class="timeline-buffered"></div>
+            <div id="timeline-progress" class="timeline-progress"></div>
+            <div id="timeline-handle" class="timeline-handle"></div>
+          </div>
+          <span id="total-duration" class="time-label">0:00</span>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="dock-controls-row">
+          
+          <!-- Media Player Transport Buttons -->
+          <div class="transport-controls">
+            <button id="shuffle-btn" class="control-btn toggle-btn" title="Toggle Shuffle">
+              🔀
+            </button>
+            <button id="prev-btn" class="control-btn" title="Previous Track (⏮)">
+              ⏮
+            </button>
+            <button id="seek-back-btn" class="control-btn" title="Rewind 10 seconds (⏪)">
+              ⏪
+            </button>
+            
+            <button id="play-toggle" class="play-toggle-btn" title="Play / Pause (Space)">
+              ▶
+            </button>
+            
+            <button id="seek-forward-btn" class="control-btn" title="Forward 10 seconds (⏩)">
+              ⏩
+            </button>
+            <button id="next-btn" class="control-btn" title="Next Track (⏭)">
+              ⏭
+            </button>
+            <button id="repeat-btn" class="control-btn toggle-btn active" title="Repeat All / Repeat One / Off">
+              🔁
+            </button>
+          </div>
+
+          <!-- Volume Controls -->
+          <div class="volume-container">
+            <button id="volume-btn" class="control-btn-mini" title="Mute / Unmute">
+              🔊
+            </button>
+            <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.01" value="0.85" title="Volume">
+          </div>
+
+          <div class="dock-divider"></div>
+
+          <!-- Upload Song Button -->
+          <button id="upload-btn" class="hud-btn-action" title="Upload audio files (MP3, WAV, FLAC, M4A)">
+            <span>📁</span> <span>Upload Songs</span>
+          </button>
+          <input type="file" id="file-input" accept="audio/*" multiple style="display: none;">
+
+          <!-- Preset Selector -->
+          <div class="dock-group" id="preset-group">
+            <span class="dock-label">Music Preset</span>
+            <select id="synth-preset" class="dock-select">
+              <option value="cyberpunk">⚡ Cyberpunk Synthwave (120 BPM)</option>
+              <option value="lofi">☕ Lo-Fi Sunset Chill (85 BPM)</option>
+              <option value="ambient">🌌 Space Ambient & Drones</option>
+              <option value="electro">🔥 Electro House Bounce (128 BPM)</option>
+            </select>
+          </div>
+
+          <!-- Audio Source Selector -->
+          <div class="dock-group">
+            <span class="dock-label">Audio Source</span>
+            <select id="audio-source" class="dock-select">
+              <option value="synth">Built-in Synth Engine</option>
+              <option value="playlist">Music Playlist / Files</option>
+              <option value="mic">Live Microphone</option>
+            </select>
+          </div>
+
+          <!-- Geometry Selector -->
+          <div class="dock-group">
+            <span class="dock-label">3D Geometry</span>
+            <select id="geometry-mode" class="dock-select">
+              <option value="wave">🌊 Dynamic Wave Grid</option>
+              <option value="sphere">🪐 Morphing Cyber Sphere</option>
+              <option value="tunnel">🌀 Hyperspace Vortex</option>
+            </select>
+          </div>
+
+        </div>
+
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Glassmorphism Playlist & Music Queue Drawer -->
+  <aside id="playlist-drawer" class="playlist-drawer interactive">
+    <div class="playlist-header">
+      <div class="playlist-title-wrap">
+        <div class="playlist-header-icon">🎵</div>
+        <div>
+          <h3>Music Playlist & Queue</h3>
+          <span id="queue-status-text" class="queue-subtext">4 tracks available</span>
+        </div>
+      </div>
+      <div class="playlist-actions">
+        <button id="drawer-add-btn" class="hud-btn-mini primary" title="Upload and Add Audio Files">
+          <span>➕</span> Add Songs
+        </button>
+        <button id="drawer-clear-btn" class="hud-btn-mini danger" title="Clear Uploaded Tracks">
+          <span>🗑️</span> Clear
+        </button>
+        <button id="close-playlist-btn" class="close-playlist-btn" title="Close Playlist Panel">&times;</button>
+      </div>
+    </div>
+    
+    <div class="playlist-body custom-scrollbar">
+      <div id="playlist-track-list" class="track-list">
+        <!-- Dynamically populated track items -->
+      </div>
+    </div>
+
+    <div class="playlist-footer">
+      <div class="drop-hint">
+        <span>💡 Drag & drop audio files directly anywhere on screen</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Drag & Drop Fullscreen Overlay Indicator -->
+  <div id="drag-drop-overlay" class="drag-drop-overlay">
+    <div class="drop-box">
+      <span class="drop-icon">🎵</span>
+      <h3>Drop Audio Files to Queue</h3>
+      <p>Supports MP3, WAV, FLAC, AAC, M4A, OGG</p>
+    </div>
+  </div>
+
+  <!-- AI Theme Modal -->
+  <div id="vibe-modal" class="modal-backdrop interactive">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>✨ AI Vibe & Theme Generator</h3>
+        <button id="close-modal" class="close-btn">&times;</button>
+      </div>
+      <p style="color: var(--text-dim); font-size: 0.9rem;">
+        Type any musical genre, atmosphere, or feeling (e.g. <em>"Ethereal Dream Pop"</em>, <em>"Heavy Cyberpunk Industrial"</em>, <em>"Sunset Lo-Fi Chill"</em>) and Gemini will dynamically craft a unique 3D visual theme.
+      </p>
+      <input type="text" id="mood-input" class="modal-input" placeholder="e.g. Futuristic Vaporwave Sunset" value="Cyberpunk Neon Overdrive">
+      <button id="generate-theme-btn" class="hud-btn primary" style="justify-content: center; width: 100%;">
+        Generate Vibe & Theme
+      </button>
+    </div>
+  </div>
+
+  <!-- Modular Application Scripts -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
