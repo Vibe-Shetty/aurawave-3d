@@ -9,14 +9,56 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow;
+let splashWindow;
+let outroWindow;
+let pendingCleanupScript = null;
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+function isUninstallMode() {
+  const isUninstallArgs = process.argv.join(' ').toLowerCase().includes('--uninstall');
+  const isUninstallName = process.execPath.toLowerCase().includes('uninstall');
+  return isUninstallArgs || isUninstallName;
+}
+
+function createWindows() {
+  const isUninstall = isUninstallMode();
+
+  // If in uninstall mode, launch wizard directly without the intro splash
+  if (isUninstall) {
+    mainWindow = new BrowserWindow({
+      width: 800,
+      height: 600,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      center: true,
+      show: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    const devUrl = process.env.VITE_DEV_SERVER_URL;
+    if (devUrl) {
+      mainWindow.loadURL(devUrl);
+    } else {
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    }
+    return;
+  }
+
+  // 1. Frameless Transparent Splash Window (Expanded dimensions with edge fade)
+  splashWindow = new BrowserWindow({
+    width: 760,
+    height: 620,
     frame: false,
     transparent: true,
     resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    hasShadow: false,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -24,19 +66,58 @@ function createWindow() {
     },
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    // mainWindow.webContents.openDevTools();
+  // 2. Main Installer Window (Preloaded in background)
+  mainWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    center: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    splashWindow.loadURL(`${devUrl}?view=splash`);
+    mainWindow.loadURL(devUrl);
   } else {
+    splashWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'splash' } });
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  let transitioned = false;
+  const transitionToMain = () => {
+    if (transitioned) return;
+    transitioned = true;
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+      splashWindow = null;
+    }
+  };
+
+  // Transition when React animation sends complete event, or fallback timer
+  ipcMain.once('splash-complete', transitionToMain);
+  setTimeout(transitionToMain, 4200);
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(createWindows);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+
 
 // Window controls
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
@@ -205,6 +286,57 @@ ipcMain.on('launch-app', (event, exePath) => {
   app.quit();
 });
 
+ipcMain.on('show-outro', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+    mainWindow = null;
+  }
+
+  outroWindow = new BrowserWindow({
+    width: 760,
+    height: 620,
+
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    hasShadow: false,
+    show: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    outroWindow.loadURL(`${devUrl}?view=outro`);
+  } else {
+    outroWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'outro' } });
+  }
+
+  let outroDone = false;
+  const finishOutro = () => {
+    if (outroDone) return;
+    outroDone = true;
+
+    if (outroWindow && !outroWindow.isDestroyed()) {
+      outroWindow.close();
+      outroWindow = null;
+    }
+
+    if (pendingCleanupScript) {
+      exec(`start /b cmd.exe /c "${pendingCleanupScript}"`);
+    }
+    app.quit();
+  };
+
+  ipcMain.once('outro-complete', finishOutro);
+  setTimeout(finishOutro, 4200);
+});
+
 ipcMain.handle('uninstall-app', async (event, targetDir) => {
   try {
     event.sender.send('uninstall-progress', { status: 'Closing application...', percent: 10 });
@@ -223,9 +355,7 @@ ipcMain.handle('uninstall-app', async (event, targetDir) => {
 
     event.sender.send('uninstall-progress', { status: 'Removing files...', percent: 80 });
     
-    // Instead of deleting files here (which might lock because we are running from the targetDir),
-    // we spawn a detached batch file to wait 2 seconds, delete the whole directory, and exit.
-    
+    // Create detached cleanup batch file
     const cleanupScriptPath = path.join(app.getPath('temp'), 'aurawave_cleanup.bat');
     const batScript = `@echo off
 timeout /t 2 /nobreak >nul
@@ -233,19 +363,14 @@ rmdir /s /q "${targetDir}"
 del "%~f0"
 `;
     fs.writeFileSync(cleanupScriptPath, batScript);
+    pendingCleanupScript = cleanupScriptPath;
     
     event.sender.send('uninstall-progress', { status: 'Finalizing...', percent: 100 });
     
-    // We return success, then React will show the final message, fade out, and call window-close.
-    // When the window closes, we execute the cleanup script and quit.
-    ipcMain.once('window-close', () => {
-      exec(`start /b cmd.exe /c "${cleanupScriptPath}"`);
-      app.quit();
-    });
-
     return { success: true };
   } catch(e) {
     console.error(e);
     return { success: false, error: e.message };
   }
 });
+

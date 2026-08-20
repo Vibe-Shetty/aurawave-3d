@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, X, Minus, Check, ChevronRight } from 'lucide-react';
+import { 
+  FolderOpen, 
+  X, 
+  Minus, 
+  Check, 
+  ChevronRight, 
+  HardDrive, 
+  Sparkles, 
+  AlertTriangle,
+  RotateCcw,
+  Play
+} from 'lucide-react';
 import './index.css';
+
 
 function App() {
   const [installPath, setInstallPath] = useState('');
@@ -12,7 +24,7 @@ function App() {
   const [installedPath, setInstalledPath] = useState(null);
 
   const [mode, setMode] = useState('install');
-  const [showFadeOut, setShowFadeOut] = useState(false);
+
 
   useEffect(() => {
     // Get mode (install vs uninstall)
@@ -70,76 +82,137 @@ function App() {
     <div className="installer-container">
       {/* Custom Titlebar */}
       <div className="titlebar">
-        <div className="drag-region">AuraWave 3D {mode === 'uninstall' ? 'Uninstaller' : 'Setup'}</div>
+        <div className="drag-region">
+          <div className="titlebar-badge">
+            <span className="app-dot"></span>
+            <span className="app-title">AuraWave 3D</span>
+            <span className="app-subtitle">{mode === 'uninstall' ? 'Maintenance Wizard' : 'Installer v1.0'}</span>
+          </div>
+        </div>
         <div className="window-controls">
-          <button onClick={() => window.electronAPI?.windowMinimize()}><Minus size={16}/></button>
-          <button onClick={() => window.electronAPI?.windowClose()} className="close-btn"><X size={16}/></button>
+          <button onClick={() => window.electronAPI?.windowMinimize()} title="Minimize">
+            <Minus size={15} />
+          </button>
+          <button onClick={() => window.electronAPI?.windowClose()} className="close-btn" title="Close">
+            <X size={15} />
+          </button>
         </div>
       </div>
 
-      <div className={`installer-content ${showFadeOut ? 'fade-out' : ''}`}>
-        {/* Left Panel - Branding */}
+      <div className="installer-content">
+        {/* Left Panel - Branding & Mascot */}
         <div className="left-panel">
           <div className="branding">
-            <h1>AuraWave</h1>
-            <p>Next-Gen Audio-Reactive 3D Environments</p>
+            <div className="brand-tag">
+              <Sparkles size={13} className="sparkle-icon" />
+              <span>Next-Gen Visualizer</span>
+            </div>
+            <h1>AuraWave<span>3D</span></h1>
+            <p>Audio-Reactive 3D Environments & Shaders</p>
           </div>
+
           <div className="mascot-placeholder">
+            <div className="mascot-ambient-glow"></div>
             <video 
-              src="./A_high_quality_D_animation_of.mp4" 
+              src="./mascot_black.mp4" 
               autoPlay 
               loop 
               muted 
               playsInline
-              className="mascot-video"
+              className="mascot-screen-video"
             />
+          </div>
+
+          <div className="left-footer-badges">
+            <span className="tech-badge">DirectX 12 / WebGPU</span>
+            <span className="tech-badge">Spatial Audio FX</span>
           </div>
         </div>
 
-        {/* Right Panel - Setup */}
+        {/* Right Panel - Setup / Progress / Finished */}
         <div className="right-panel">
           
           {mode === 'install' && !installing && !installedPath && (
             <div className="setup-form slide-in">
-              <h2>Installation</h2>
+              <div className="section-header">
+                <h2>Installation Setup</h2>
+                <p className="section-subtext">Configure your install directory and preferences</p>
+              </div>
               
+              {/* Path Selector */}
               <div className="form-group">
-                <label>INSTALL PATH</label>
+                <div className="label-row">
+                  <label>Install Location</label>
+                  <span className="storage-info">
+                    <HardDrive size={12} /> ~350 MB Required
+                  </span>
+                </div>
                 <div className="path-input-wrapper">
-                  <input type="text" value={installPath} readOnly />
-                  <button onClick={handleSelectDir} className="icon-btn">
-                    <FolderOpen size={18} />
+                  <input 
+                    type="text" 
+                    value={installPath} 
+                    readOnly 
+                    title={installPath}
+                  />
+                  <button 
+                    onClick={handleSelectDir} 
+                    className="browse-btn"
+                    title="Browse Folder"
+                  >
+                    <FolderOpen size={16} />
+                    <span>Browse</span>
                   </button>
                 </div>
               </div>
 
-              <div className="form-group checkbox-group">
-                <label className="cyber-checkbox">
-                  <input 
-                    type="checkbox" 
-                    checked={createShortcut} 
-                    onChange={(e) => setCreateShortcut(e.target.checked)} 
-                  />
-                  <span className="checkmark"><Check size={14} /></span>
-                  Create Desktop Shortcut
-                </label>
+              {/* Options Group */}
+              <div className="options-container">
+                <div className="label-row">
+                  <label>Preferences</label>
+                </div>
+
+                {/* Option 1: Desktop Shortcut */}
+                <div 
+                  className={`option-card ${createShortcut ? 'active' : ''}`}
+                  onClick={() => setCreateShortcut(!createShortcut)}
+                  role="checkbox"
+                  aria-checked={createShortcut}
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && setCreateShortcut(!createShortcut)}
+                >
+                  <div className="option-checkbox">
+                    {createShortcut && <Check size={14} strokeWidth={3} />}
+                  </div>
+                  <div className="option-text-group">
+                    <div className="option-title">Create Desktop Shortcut</div>
+                    <div className="option-desc">Add a quick-launch icon to your desktop</div>
+                  </div>
+                </div>
+
+                {/* Option 2: Auto-Updates */}
+                <div 
+                  className={`option-card ${autoUpdate ? 'active' : ''}`}
+                  onClick={() => setAutoUpdate(!autoUpdate)}
+                  role="checkbox"
+                  aria-checked={autoUpdate}
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && setAutoUpdate(!autoUpdate)}
+                >
+                  <div className="option-checkbox">
+                    {autoUpdate && <Check size={14} strokeWidth={3} />}
+                  </div>
+                  <div className="option-text-group">
+                    <div className="option-title">Enable Auto-Updates</div>
+                    <div className="option-desc">Automatically receive newest visual presets & engine updates</div>
+                  </div>
+                </div>
               </div>
 
-              <div className="form-group checkbox-group">
-                <label className="cyber-checkbox">
-                  <input 
-                    type="checkbox" 
-                    checked={autoUpdate} 
-                    onChange={(e) => setAutoUpdate(e.target.checked)} 
-                  />
-                  <span className="checkmark"><Check size={14} /></span>
-                  Enable Auto-Updates
-                </label>
-              </div>
-
+              {/* Install Action Button */}
               <div className="action-area">
-                <button className="cyber-btn primary" onClick={handleInstall}>
-                  Install
+                <button className="cyber-btn primary install-cta" onClick={handleInstall}>
+                  <span>Install AuraWave 3D</span>
+                  <ChevronRight size={18} />
                 </button>
               </div>
             </div>
@@ -147,21 +220,47 @@ function App() {
 
           {mode === 'install' && installing && !installedPath && (
             <div className="progress-screen slide-in">
-              <h2>{status.startsWith('Install') ? 'Error' : 'Installing AuraWave 3D'}</h2>
+              <div className="progress-header">
+                <h2>{status.startsWith('Install failed') ? 'Installation Error' : 'Installing AuraWave 3D'}</h2>
+                <p className="progress-sub">
+                  {status.startsWith('Install failed') 
+                    ? 'An error occurred during extraction' 
+                    : 'Setting up files, audio drivers, and shaders...'}
+                </p>
+              </div>
+
+              {/* Animated Equalizer Waves */}
+              {!status.startsWith('Install failed') && (
+                <div className="audio-eq-bars">
+                  <span className="eq-bar b1"></span>
+                  <span className="eq-bar b2"></span>
+                  <span className="eq-bar b3"></span>
+                  <span className="eq-bar b4"></span>
+                  <span className="eq-bar b5"></span>
+                  <span className="eq-bar b6"></span>
+                  <span className="eq-bar b7"></span>
+                </div>
+              )}
+
               <div className="progress-bar-container">
                 <div 
-                  className="progress-bar-fill" 
-                  style={{ 
-                    width: `${progress}%`,
-                    backgroundColor: status.startsWith('Install') ? '#ff3333' : '#0ff'
-                  }}>
+                  className={`progress-bar-fill ${status.startsWith('Install failed') ? 'error' : ''}`} 
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="progress-glow-head"></div>
                 </div>
               </div>
-              <p className="status-text">{status}</p>
-              {status.startsWith('Install') && (
-                <div className="action-area" style={{ marginTop: '20px' }}>
-                  <button className="cyber-btn primary" onClick={handleRetry}>
-                    Retry
+
+              <div className="progress-status-row">
+                <span className="status-text">{status}</span>
+                <span className="percent-text">{progress}%</span>
+              </div>
+
+              {status.startsWith('Install failed') && (
+                <div className="action-area">
+                  <button className="cyber-btn secondary" onClick={handleRetry}>
+                    <RotateCcw size={16} />
+                    <span>Retry Setup</span>
                   </button>
                 </div>
               )}
@@ -170,30 +269,55 @@ function App() {
 
           {mode === 'install' && installedPath && (
             <div className="success-screen slide-in">
-              <div className="success-icon">
-                <Check size={48} color="#0ff" />
+              <div className="success-badge-wrapper">
+                <div className="success-badge-pulse"></div>
+                <div className="success-icon">
+                  <Check size={36} strokeWidth={3} />
+                </div>
               </div>
+              
               <h2>Ready to Launch</h2>
-              <p>AuraWave 3D has been successfully installed.</p>
+              <p className="success-desc">
+                AuraWave 3D has been successfully installed and is ready to ignite your audio visuals.
+              </p>
+
+              <div className="installed-info-card">
+                <span className="info-label">Installed Directory:</span>
+                <span className="info-val">{installPath}</span>
+              </div>
+
               <div className="action-area">
                 <button className="cyber-btn primary launch-btn" onClick={handleLaunch}>
-                  Launch Now <ChevronRight size={18}/>
+                  <Play size={18} fill="currentColor" />
+                  <span>Launch AuraWave 3D</span>
+                  <ChevronRight size={18}/>
                 </button>
               </div>
             </div>
           )}
 
           {mode === 'uninstall' && !installing && !installedPath && (
-            <div className="setup-form slide-in" style={{ justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                <X size={64} color="#ff3333" style={{ marginBottom: '20px' }} />
+            <div className="setup-form slide-in">
+              <div className="uninstall-hero">
+                <div className="uninstall-warning-badge">
+                  <AlertTriangle size={36} color="#ff3366" />
+                </div>
                 <h2>Uninstall AuraWave 3D</h2>
-                <p style={{ color: '#888', marginTop: '10px' }}>
-                  This will remove the application, shortcuts, and all associated registry keys from your computer.
+                <p className="uninstall-sub">
+                  This will remove the application, desktop shortcuts, and configuration data from your computer.
                 </p>
               </div>
-              <div className="action-area" style={{ justifyContent: 'center' }}>
-                <button className="cyber-btn primary" style={{ background: '#ff3333', borderColor: '#ff3333', color: '#ffffff', boxShadow: '0 0 15px rgba(255, 51, 51, 0.4)' }} 
+
+              <div className="uninstall-info-box">
+                <div className="info-row">
+                  <span className="label">Target Directory:</span>
+                  <span className="value">{installPath || 'AuraWave 3D Directory'}</span>
+                </div>
+              </div>
+
+              <div className="action-area">
+                <button 
+                  className="cyber-btn danger uninstall-cta"
                   onClick={async () => {
                     setInstalling(true);
                     setProgress(0);
@@ -204,8 +328,9 @@ function App() {
                     } else {
                       setStatus('Uninstall failed: ' + (result?.error || 'Unknown error'));
                     }
-                  }}>
-                  Confirm Uninstall
+                  }}
+                >
+                  <span>Confirm Uninstall</span>
                 </button>
               </div>
             </div>
@@ -213,21 +338,28 @@ function App() {
 
           {mode === 'uninstall' && installing && !installedPath && (
             <div className="progress-screen slide-in">
-              <h2>{status.startsWith('Uninstall failed') ? 'Error' : 'Uninstalling AuraWave 3D'}</h2>
+              <h2>{status.startsWith('Uninstall failed') ? 'Removal Error' : 'Uninstalling AuraWave 3D'}</h2>
+              <p className="progress-sub">Cleaning up files and registry keys...</p>
+
               <div className="progress-bar-container">
                 <div 
-                  className="progress-bar-fill" 
-                  style={{ 
-                    width: `${progress}%`,
-                    backgroundColor: status.startsWith('Uninstall failed') ? '#ff3333' : '#ff3333'
-                  }}>
+                  className="progress-bar-fill error" 
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="progress-glow-head"></div>
                 </div>
               </div>
-              <p className="status-text">{status}</p>
+
+              <div className="progress-status-row">
+                <span className="status-text">{status}</span>
+                <span className="percent-text">{progress}%</span>
+              </div>
+
               {status.startsWith('Uninstall failed') && (
-                <div className="action-area" style={{ marginTop: '20px' }}>
-                  <button className="cyber-btn primary" onClick={handleRetry}>
-                    Retry
+                <div className="action-area">
+                  <button className="cyber-btn secondary" onClick={handleRetry}>
+                    <RotateCcw size={16} />
+                    <span>Retry</span>
                   </button>
                 </div>
               )}
@@ -236,29 +368,21 @@ function App() {
 
           {mode === 'uninstall' && installedPath && (
             <div className="success-screen slide-in">
-              {!showFadeOut ? (
-                <>
-                  <div className="success-icon" style={{ borderColor: '#ff3333' }}>
-                    <Check size={48} color="#ff3333" />
-                  </div>
-                  <h2>Uninstalled</h2>
-                  <p>AuraWave 3D has been completely removed.</p>
-                  <div className="action-area">
-                    <button className="cyber-btn primary" onClick={() => {
-                      setShowFadeOut(true);
-                      setTimeout(() => {
-                        window.electronAPI?.windowClose();
-                      }, 2000);
-                    }}>
-                      Close
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="fade-out-message slide-in">
-                  <h2 style={{ fontSize: '36px', color: '#fff', textShadow: '0 0 20px #0ff', opacity: 0.8 }}>See You Soon.</h2>
-                </div>
-              )}
+              <div className="success-icon danger-icon">
+                <Check size={36} color="#ff3366" />
+              </div>
+              <h2>Uninstall Complete</h2>
+              <p className="success-desc">AuraWave 3D has been completely removed from your PC.</p>
+              <div className="action-area">
+                <button 
+                  className="cyber-btn secondary" 
+                  onClick={() => {
+                    window.electronAPI?.showOutro();
+                  }}
+                >
+                  <span>Finish & Exit</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -269,3 +393,4 @@ function App() {
 }
 
 export default App;
+

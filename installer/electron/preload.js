@@ -11,4 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getInstallerMode: () => ipcRenderer.invoke('get-installer-mode'),
   uninstallApp: (targetDir) => ipcRenderer.invoke('uninstall-app', targetDir),
   onUninstallProgress: (callback) => ipcRenderer.on('uninstall-progress', (event, data) => callback(data)),
+  splashComplete: () => ipcRenderer.send('splash-complete'),
+  showOutro: () => ipcRenderer.send('show-outro'),
+  outroComplete: () => ipcRenderer.send('outro-complete'),
 });
+
+
