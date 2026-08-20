@@ -22,8 +22,9 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "public/icon.png"
+      "icon": "public/icon.ico"
     }
+
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
