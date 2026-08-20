@@ -22,7 +22,7 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "../prototype-3/public/pwa-512x512.png"
+      "icon": "public/icon.png"
     }
   },
   "dependencies": {
