@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FolderOpen, 
   X, 
@@ -19,7 +18,10 @@ import {
   Activity,
   Layers,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Volume2,
+  VolumeX,
+  Palette
 } from 'lucide-react';
 import './index.css';
 
@@ -40,7 +42,120 @@ const playCyberBlip = (freq = 880, type = 'sine', duration = 0.035) => {
     osc.start();
     osc.stop(ctx.currentTime + duration);
   } catch {
-    // Graceful fallback if audio context is restricted
+    // Graceful fallback
+  }
+};
+
+// Self-contained ambient music engine for live visualizer audio preview
+class CyberSynthEngine {
+  constructor() {
+    this.ctx = null;
+    this.isPlaying = false;
+    this.interval = null;
+    this.analyser = null;
+  }
+
+  init() {
+    if (this.ctx) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    this.ctx = new AudioCtx();
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 32;
+  }
+
+  start() {
+    this.init();
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    this.isPlaying = true;
+
+    const chords = [
+      [110, 220, 277.18, 329.63, 440], // A Major chord
+      [98, 196, 246.94, 293.66, 392],  // G Major chord
+      [87.31, 174.61, 220, 261.63, 349.23], // F Major chord
+      [110, 220, 261.63, 329.63, 440], // A Minor chord
+    ];
+
+    let chordIdx = 0;
+    const playNext = () => {
+      if (!this.isPlaying || !this.ctx) return;
+      const currentChord = chords[chordIdx % chords.length];
+      chordIdx++;
+
+      currentChord.forEach((freq) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(600, this.ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(1400, this.ctx.currentTime + 1.2);
+        filter.frequency.exponentialRampToValueAtTime(500, this.ctx.currentTime + 3.0);
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+
+        gain.gain.setValueAtTime(0.001, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.015, this.ctx.currentTime + 0.6);
+        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 3.1);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.analyser);
+        this.analyser.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + 3.2);
+      });
+    };
+
+    playNext();
+    this.interval = setInterval(playNext, 3100);
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.interval) clearInterval(this.interval);
+  }
+}
+
+const synthEngine = new CyberSynthEngine();
+
+const THEMES = {
+  cyberpunk: {
+    id: 'cyberpunk',
+    name: 'Neon Cyberpunk',
+    accentCyan: '#00f0ff',
+    accentRed: '#ff4655',
+    accentPurple: '#a855f7',
+    glowGradient: 'radial-gradient(circle, rgba(0, 240, 255, 0.25) 0%, rgba(255, 70, 85, 0.15) 50%, transparent 75%)'
+  },
+  euphoria: {
+    id: 'euphoria',
+    name: 'Liquid Euphoria',
+    accentCyan: '#06b6d4',
+    accentRed: '#10b981',
+    accentPurple: '#84cc16',
+    glowGradient: 'radial-gradient(circle, rgba(6, 182, 212, 0.25) 0%, rgba(16, 185, 129, 0.15) 50%, transparent 75%)'
+  },
+  resonance: {
+    id: 'resonance',
+    name: 'Ambient Resonance',
+    accentCyan: '#38bdf8',
+    accentRed: '#8b5cf6',
+    accentPurple: '#ec4899',
+    glowGradient: 'radial-gradient(circle, rgba(139, 92, 246, 0.28) 0%, rgba(56, 189, 248, 0.18) 50%, transparent 75%)'
+  },
+  solar: {
+    id: 'solar',
+    name: 'Solar Flare',
+    accentCyan: '#f59e0b',
+    accentRed: '#ef4444',
+    accentPurple: '#f97316',
+    glowGradient: 'radial-gradient(circle, rgba(245, 158, 11, 0.28) 0%, rgba(239, 68, 68, 0.18) 50%, transparent 75%)'
   }
 };
 
@@ -96,6 +211,17 @@ function App() {
 
   const [mode, setMode] = useState('install'); // 'install' | 'uninstall'
   
+  // Theme Customizer State
+  const [activeTheme, setActiveTheme] = useState('cyberpunk');
+
+  // Music Visualizer Preview State
+  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
+  const [liveSpectrum, setLiveSpectrum] = useState([35, 60, 45, 80, 55, 90, 75, 40, 70, 50, 65, 45]);
+  const animationFrameRef = useRef(null);
+
+  // Mouse Spotlight Coordinates
+  const [mousePos, setMousePos] = useState({ x: 250, y: 200 });
+
   // Carousel State
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -124,6 +250,31 @@ function App() {
       setStatus(data.status);
     });
   }, []);
+
+  // Live FFT Audio Visualizer Loop
+  useEffect(() => {
+    if (!isPlayingMusic || !synthEngine.analyser) return;
+
+    const dataArray = new Uint8Array(synthEngine.analyser.frequencyBinCount);
+    const updateSpectrum = () => {
+      synthEngine.analyser.getByteFrequencyData(dataArray);
+      // Map 12 representative bins
+      const newBars = [];
+      for (let i = 0; i < 12; i++) {
+        const val = dataArray[i % dataArray.length];
+        const scaled = Math.min(100, Math.max(15, Math.round((val / 255) * 100)));
+        newBars.push(scaled);
+      }
+      setLiveSpectrum(newBars);
+      animationFrameRef.current = requestAnimationFrame(updateSpectrum);
+    };
+
+    updateSpectrum();
+
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [isPlayingMusic]);
 
   // Carousel Auto-Advance Timer
   useEffect(() => {
@@ -164,6 +315,30 @@ function App() {
     }
   }, [installedPath, mode, countdown, autoLaunchCancelled, autoLaunch, handleLaunch]);
 
+  const toggleMusicPreview = () => {
+    if (isPlayingMusic) {
+      playCyberBlip(500, 'sine', 0.03);
+      synthEngine.stop();
+      setIsPlayingMusic(false);
+    } else {
+      playCyberBlip(1200, 'sine', 0.04);
+      synthEngine.start();
+      setIsPlayingMusic(true);
+    }
+  };
+
+  const handleSelectTheme = (themeKey) => {
+    playCyberBlip(1050, 'sine', 0.03);
+    setActiveTheme(themeKey);
+  };
+
+  const handleMouseMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMousePos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+  };
 
   const handleSelectSlide = (index) => {
     playCyberBlip(1100, 'sine', 0.02);
@@ -219,11 +394,18 @@ function App() {
     setProgress(0);
   };
 
-
   const activeSlideData = SHOWCASE_SLIDES[currentSlide];
+  const currentThemeData = THEMES[activeTheme] || THEMES.cyberpunk;
+
+  // Custom CSS variables for dynamic live theme palette morphing
+  const themeStyles = {
+    '--accent-cyan': currentThemeData.accentCyan,
+    '--accent-red': currentThemeData.accentRed,
+    '--accent-purple': currentThemeData.accentPurple
+  };
 
   return (
-    <div className="installer-container asymmetric-layout">
+    <div className="installer-container asymmetric-layout" style={themeStyles}>
       {/* Top Drag & Window Controls Titlebar */}
       <div className="titlebar">
         <div className="drag-region">
@@ -234,6 +416,24 @@ function App() {
             <span className="app-version-tag">v1.4.0</span>
           </div>
         </div>
+
+        {/* Ambient Music Preview Toggle */}
+        <button 
+          className={`music-toggle-btn ${isPlayingMusic ? 'active' : ''}`}
+          onClick={toggleMusicPreview}
+          title={isPlayingMusic ? 'Mute Ambient Music' : 'Preview Cyber Ambient Music'}
+        >
+          {isPlayingMusic ? <Volume2 size={13} /> : <VolumeX size={13} />}
+          <span>{isPlayingMusic ? 'Audio: ON' : 'Audio: Preview'}</span>
+          {isPlayingMusic && (
+            <span className="mini-eq-waves">
+              <span className="eq-bar-mini e1"></span>
+              <span className="eq-bar-mini e2"></span>
+              <span className="eq-bar-mini e3"></span>
+            </span>
+          )}
+        </button>
+
         <div className="window-controls">
           <button onClick={() => window.electronAPI?.windowMinimize()} title="Minimize">
             <Minus size={15} />
@@ -295,7 +495,7 @@ function App() {
                     </div>
                     <div className="summary-row">
                       <span className="summary-label">Target Location</span>
-                      <span className="summary-val path-truncate" title={installPath}>
+                      <span className="summary-val summary-val.path-truncate" title={installPath}>
                         {installPath ? installPath.replace(/.*[\\/]/, '.../') : 'Default AppData'}
                       </span>
                     </div>
@@ -655,9 +855,21 @@ function App() {
           className="right-showcase-column"
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
+          onMouseMove={handleMouseMove}
         >
+          {/* Interactive Mouse Follow Spotlight */}
+          <div 
+            className="showcase-cursor-spotlight"
+            style={{
+              background: `radial-gradient(circle 220px at ${mousePos.x}px ${mousePos.y}px, rgba(0, 240, 255, 0.12), transparent 70%)`
+            }}
+          ></div>
+
           {/* Ambient Background Aura */}
-          <div className={`showcase-ambient-glow slide-${currentSlide}`}></div>
+          <div 
+            className={`showcase-ambient-glow slide-${currentSlide}`}
+            style={{ background: currentThemeData.glowGradient }}
+          ></div>
 
           {/* Background Media & Visual Animations */}
           <div className="showcase-media-stage">
@@ -679,38 +891,69 @@ function App() {
               </div>
             </div>
 
-            {/* Slide 1: AI Neural Constellation */}
+            {/* Slide 1: AI Neural Constellation with Live Theme Selector */}
             <div className={`slide-media-item ${currentSlide === 1 ? 'active' : ''}`}>
               <div className="neural-graphic-container">
                 <div className="neural-core-orb"></div>
                 <div className="neural-ring r1"></div>
                 <div className="neural-ring r2"></div>
-                <div className="floating-prompt-chips">
-                  <span className="chip c1"><Sparkles size={11} /> Neon Cyberpunk</span>
-                  <span className="chip c2"><Radio size={11} /> Liquid Euphoria</span>
-                  <span className="chip c3"><Cpu size={11} /> Ambient Resonance</span>
+                
+                {/* Floating Interactive Palette Morph Chips */}
+                <div className="floating-prompt-chips interactive">
+                  <button 
+                    className={`chip c1 ${activeTheme === 'cyberpunk' ? 'selected' : ''}`}
+                    onClick={() => handleSelectTheme('cyberpunk')}
+                    title="Switch to Neon Cyberpunk Theme"
+                  >
+                    <Sparkles size={11} /> Neon Cyberpunk
+                  </button>
+                  <button 
+                    className={`chip c2 ${activeTheme === 'euphoria' ? 'selected' : ''}`}
+                    onClick={() => handleSelectTheme('euphoria')}
+                    title="Switch to Liquid Euphoria Theme"
+                  >
+                    <Radio size={11} /> Liquid Euphoria
+                  </button>
+                  <button 
+                    className={`chip c3 ${activeTheme === 'resonance' ? 'selected' : ''}`}
+                    onClick={() => handleSelectTheme('resonance')}
+                    title="Switch to Ambient Resonance Theme"
+                  >
+                    <Cpu size={11} /> Ambient Resonance
+                  </button>
+                  <button 
+                    className={`chip c4 ${activeTheme === 'solar' ? 'selected' : ''}`}
+                    onClick={() => handleSelectTheme('solar')}
+                    title="Switch to Solar Flare Theme"
+                  >
+                    <Palette size={11} /> Solar Flare
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Slide 2: Hardware DSP Spectrum Matrix */}
+            {/* Slide 2: Hardware DSP Spectrum Matrix with Live Audio Bins */}
             <div className={`slide-media-item ${currentSlide === 2 ? 'active' : ''}`}>
               <div className="dsp-graphic-container">
-                <div className="dsp-analyzer-bars">
-                  {[45, 80, 60, 95, 70, 100, 85, 40, 90, 65, 75, 55].map((h, i) => (
-                    <span 
-                      key={i} 
-                      className="dsp-bar" 
-                      style={{ 
-                        height: `${h}%`,
-                        animationDelay: `${i * 0.08}s`
-                      }}
-                    ></span>
-                  ))}
-                </div>
-                <div className="dsp-latency-badge">
-                  <Activity size={12} />
-                  <span>&lt; 10ms DSP LATENCY</span>
+                <div className="dsp-card-wrapper">
+                  <div className="dsp-card-header" onClick={toggleMusicPreview}>
+                    <Activity size={12} className="pulse-icon" />
+                    <span>{isPlayingMusic ? 'LIVE AUDIO FFT (ACTIVE)' : 'CLICK TO TEST LIVE FFT AUDIO'}</span>
+                  </div>
+                  <div className="dsp-analyzer-bars">
+                    {liveSpectrum.map((h, i) => (
+                      <span 
+                        key={i} 
+                        className="dsp-bar" 
+                        style={{ 
+                          height: `${h}%`,
+                          animationPlayState: isPlayingMusic ? 'paused' : 'running',
+                          transition: isPlayingMusic ? 'height 0.08s ease' : 'none',
+                          animationDelay: `${i * 0.08}s`
+                        }}
+                      ></span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

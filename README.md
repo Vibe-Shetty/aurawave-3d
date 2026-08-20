@@ -1,6 +1,6 @@
 # 🌊 AuraWave 3D — AI & Three.js Music Visualizer Experience
 
-[![Release](https://img.shields.io/badge/Release-v1.3.1%20(Latest)-8b5cf6?style=for-the-badge&logo=github)](https://github.com/Vibe-Shetty/aurawave-3d/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.4.0%20(Latest)-8b5cf6?style=for-the-badge&logo=github)](https://github.com/Vibe-Shetty/aurawave-3d/releases/latest)
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL%203D-black?style=for-the-badge&logo=three.js)](https://threejs.org/)
 [![Gemini](https://img.shields.io/badge/Google%20Gemini-3.6%20Flash-4285F4?style=for-the-badge&logo=google)](https://aistudio.google.com/)
 [![Electron](https://img.shields.io/badge/Desktop-Electron%20App-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
@@ -14,19 +14,25 @@ An immersive, audio-reactive 3D web and desktop visualizer combining **Three.js 
 
 Get the official standalone installer with 1-click desktop shortcuts and clean uninstall support:
 
-👉 **[Download AuraWave 3D Setup v1.3.1 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.3.1/AuraWave-3D-Setup-v1.3.1.exe)**
+👉 **[Download AuraWave 3D Setup v1.4.0 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-v1.4.0.exe)**
 
 ---
 
-## 🌟 What's New in v1.3.1
+## 🌟 What's New in v1.4.0
 
-- 🎬 **Frameless Animated Splash Intro (3.5s)**: Cinematic multi-stage startup sequence featuring rotating orbital tech rings, live bouncing audio equalizer spectrum, and dynamic status matrix ticker (`CALIBRATING AUDIO MATRIX...` $\rightarrow$ `AURA ENGINE READY`).
-- 🌌 **Frameless Outro Splash Screen ("See You Soon.")**: Ethereal uninstallation completion screen with floating resting waveform and ascending energy particles before clean desktop dissolution.
-- 💫 **Infinite Desktop Dissolve (Zero Edge Clipping)**: Enlarged transparent window canvas ($760\times620\text{px}$) with CSS radial feather masks so all shockwaves and ambient neon auras fade seamlessly into your wallpaper without hard rectangular borders.
-- 🤖 **GPU Screen-Blended AI Mascot**: Clean, artifact-free mascot video integration using pure black background isolation and CSS `screen` blending.
-- ⚡ **Direct Uninstall Launch**: Intelligently skips intro splash animations when running maintenance/uninstallation flows for immediate action.
+- 🎮 **Asymmetric Split Layout ($840\times580\text{px}$)**: Next-gen installation client featuring a compact ~35% control column and a full-bleed ~65% hero showcase stage.
+- ⚡ **Segmented Quick vs Custom Setup**: 1-click instant setup (`INSTALL NOW (150 MB)`) or granular customization (custom drive browser, storage allocation meter, shortcut preferences).
+- 🎠 **3-Card Feature Showcase Carousel**:
+  - **Slide 1 — Real-Time 3D Shaders**: Screen-blended 3D mascot video on an elevated holographic glowing pedestal with counter-rotating orbital tech rings.
+  - **Slide 2 — AI Neural Vibe Generator**: Interactive palette morphing chips (*Neon Cyberpunk*, *Liquid Euphoria*, *Ambient Resonance*, *Solar Flare*) that dynamically transform the client's lighting theme in real time.
+  - **Slide 3 — Hardware DSP Spectrum Matrix**: Live 12-band frequency analyzer with sub-10ms DSP latency badge.
+- 🔊 **Built-in Cyber Ambient Synthesizer**: Titlebar `Audio: Preview` button playing an ambient synth chord progression with real-time FFT frequency bars driving the visualizer.
+- 💡 **Dynamic Cursor Spotlight**: Real-time mouse-tracking radial illumination across the showcase stage.
+- 📊 **Multi-Stage Decompression Feed**: Real-time 4-stage milestone matrix with live animated LED indicators during setup.
+- ⏱️ **Smart Auto-Launch Flow**: 3-second auto-launch countdown ticker with instant launch override.
 
 ---
+
 
 
 ## ✨ Features
