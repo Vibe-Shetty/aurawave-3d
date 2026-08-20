@@ -25,8 +25,8 @@ function createWindows() {
   // If in uninstall mode, launch wizard directly without the intro splash
   if (isUninstall) {
     mainWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
+      width: 840,
+      height: 580,
       frame: false,
       transparent: true,
       resizable: false,
@@ -68,8 +68,8 @@ function createWindows() {
 
   // 2. Main Installer Window (Preloaded in background)
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 840,
+    height: 580,
     frame: false,
     transparent: true,
     resizable: false,
