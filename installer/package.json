@@ -11,18 +11,20 @@
     "lint": "oxlint",
     "preview": "vite preview"
   },
+
   "build": {
     "appId": "com.aurawave.setup",
     "productName": "AuraWave 3D Setup",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist-electron",
+      "buildResources": "build"
     },
     "extraResources": [
       "payload.zip"
     ],
     "win": {
       "target": "portable",
-      "icon": "public/icon.ico"
+      "icon": "build/icon.ico"
     }
 
   },
