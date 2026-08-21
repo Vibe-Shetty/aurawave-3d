@@ -14,22 +14,18 @@ An immersive, audio-reactive 3D web and desktop visualizer combining **Three.js 
 
 Get the official standalone installer with 1-click desktop shortcuts and clean uninstall support:
 
-👉 **[Download AuraWave 3D Setup v1.4.0 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-v1.4.0.exe)**
+👉 **[Download AuraWave 3D Setup Latest (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-Latest.exe)** • **[Download Setup v1.4.0 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-v1.4.0.exe)**
 
 ---
 
 ## 🌟 What's New in v1.4.0
 
-- 🎮 **Asymmetric Split Layout ($840\times580\text{px}$)**: Next-gen installation client featuring a compact ~35% control column and a full-bleed ~65% hero showcase stage.
-- ⚡ **Segmented Quick vs Custom Setup**: 1-click instant setup (`INSTALL NOW (150 MB)`) or granular customization (custom drive browser, storage allocation meter, shortcut preferences).
-- 🎠 **3-Card Feature Showcase Carousel**:
-  - **Slide 1 — Real-Time 3D Shaders**: Screen-blended 3D mascot video on an elevated holographic glowing pedestal with counter-rotating orbital tech rings.
-  - **Slide 2 — AI Neural Vibe Generator**: Interactive palette morphing chips (*Neon Cyberpunk*, *Liquid Euphoria*, *Ambient Resonance*, *Solar Flare*) that dynamically transform the client's lighting theme in real time.
-  - **Slide 3 — Hardware DSP Spectrum Matrix**: Live 12-band frequency analyzer with sub-10ms DSP latency badge.
-- 🔊 **Built-in Cyber Ambient Synthesizer**: Titlebar `Audio: Preview` button playing an ambient synth chord progression with real-time FFT frequency bars driving the visualizer.
-- 💡 **Dynamic Cursor Spotlight**: Real-time mouse-tracking radial illumination across the showcase stage.
-- 📊 **Multi-Stage Decompression Feed**: Real-time 4-stage milestone matrix with live animated LED indicators during setup.
-- ⏱️ **Smart Auto-Launch Flow**: 3-second auto-launch countdown ticker with instant launch override.
+- 🎵 **Instant Ad-Free Global Music Streaming**: Built-in automated ad-eliminator that skips pre-roll video ads in `<400ms` with muted audio for a completely seamless playback experience.
+- ⏯️ **Full Transport Controls & Scrubber Seeking**: Deep integration with the native player API for instant song autoplay on click, reliable hard pause/resume, and precise timeline scrubber seeking.
+- 📻 **24/7 Curated Live Web Radio**: Built-in high-fidelity live stream presets (*Synthwave*, *Lo-Fi Chillhop*, *Tokyo Drift Phonk*, *Deep Space Ambient*, and *Electronic Grooves*).
+- 🪐 **Real-Time 3D Audio-Reactive Visualizers**: 3 dynamic WebGL scenes (*Wave Grid*, *Cyber Sphere*, *Hyperspace Tunnel*) reacting directly to audio frequencies and bass transients.
+- 🔍 **Spotify-Style Spotlight Search & UI Containment**: Full-featured search modal (`Ctrl + K`) with responsive category filter pills (*All*, *Songs*, *24/7 Radio*, *Synthwave*, *Lo-Fi*, *Phonk*), recent search quick recall, and strict text overflow truncation.
+- 📦 **Standalone Windows Desktop Application & Installer**: Single-instance desktop app with clean process management, zero background residue on exit, and a modern ~2-second setup wizard.
 
 ---
 
