@@ -1,5 +1,5 @@
 {
-  "name": "prototype-2",
+  "name": "aurawave-3d",
   "version": "1.0.0",
   "description": "An audio-reactive 3D web application inspired by **Video 4 (Viral Music Video Web App)** and **Video 6 (Insane Three.js Experiences)**.",
   "main": "electron/main.js",
@@ -7,6 +7,7 @@
     "dev": "vite",
     "build:web": "vite build",
     "build:exe": "npm run build:web && electron-builder",
+    "release": "node build-production-release.js",
     "start": "electron .",
     "preview": "vite preview"
   },
@@ -20,6 +21,13 @@
     "directories": {
       "output": "../releases"
     },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "three.min.js",
+      "package.json"
+    ],
     "extraResources": [
       ".env"
     ],
@@ -35,7 +43,10 @@
     "vite-plugin-pwa": "^1.3.0"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@google/genai": "^2.17.1",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "play-dl": "^1.9.7",
+    "youtubei.js": "^18.0.0"
   }
 }

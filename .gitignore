@@ -25,6 +25,8 @@ __pycache__/
 venv/
 .venv/
 
-# OS specific
+# OS & Tool specific
 .DS_Store
 Thumbs.db
+*.log
+.agents/

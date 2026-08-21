@@ -194,11 +194,11 @@ const INSTALL_MILESTONES = [
   { id: 1, label: 'Unpacking 3D Shader Matrix (6,400 vertices)', threshold: 28 },
   { id: 2, label: 'Calibrating DSP Audio Frequency Engine', threshold: 62 },
   { id: 3, label: 'Registering Windows Shortcuts & AppData', threshold: 88 },
-  { id: 4, label: 'Finalizing AuraWave 3D Environment', threshold: 100 }
 ];
 
 function App() {
-  const [installPath, setInstallPath] = useState('');
+  const defaultFallbackPath = 'C:\\Users\\' + (typeof process !== 'undefined' && process.env?.USERNAME ? process.env.USERNAME : 'User') + '\\AppData\\Local\\AuraWave3D';
+  const [installPath, setInstallPath] = useState(defaultFallbackPath);
   const [setupMode, setSetupMode] = useState('quick'); // 'quick' | 'custom'
   const [createShortcut, setCreateShortcut] = useState(true);
   const [createStartMenu, setCreateStartMenu] = useState(true);
@@ -208,6 +208,7 @@ function App() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
   const [installedPath, setInstalledPath] = useState(null);
+  const [installError, setInstallError] = useState(null);
 
   const [mode, setMode] = useState('install'); // 'install' | 'uninstall'
   
@@ -234,20 +235,32 @@ function App() {
 
   useEffect(() => {
     // Get mode (install vs uninstall)
-    window.electronAPI?.getInstallerMode().then(setMode);
+    if (window.electronAPI?.getInstallerMode) {
+      window.electronAPI.getInstallerMode().then((m) => {
+        if (m) setMode(m);
+      }).catch(() => {});
+    }
 
     // Get default path on load
-    window.electronAPI?.getDefaultPath().then(setInstallPath);
+    if (window.electronAPI?.getDefaultPath) {
+      window.electronAPI.getDefaultPath().then((p) => {
+        if (p) setInstallPath(p);
+      }).catch(() => {});
+    }
     
     // Listen for progress updates
     window.electronAPI?.onInstallProgress((data) => {
-      setProgress(data.percent);
-      setStatus(data.status);
+      if (data) {
+        if (typeof data.percent === 'number') setProgress(data.percent);
+        if (data.status) setStatus(data.status);
+      }
     });
 
     window.electronAPI?.onUninstallProgress((data) => {
-      setProgress(data.percent);
-      setStatus(data.status);
+      if (data) {
+        if (typeof data.percent === 'number') setProgress(data.percent);
+        if (data.status) setStatus(data.status);
+      }
     });
   }, []);
 
@@ -370,26 +383,54 @@ function App() {
   };
 
   const handleInstall = async () => {
-    if (!installPath) return;
+    let targetDir = installPath;
+    if (!targetDir && window.electronAPI?.getDefaultPath) {
+      try {
+        targetDir = await window.electronAPI.getDefaultPath();
+      } catch {
+        // fallback
+      }
+    }
+    if (!targetDir) {
+      targetDir = defaultFallbackPath;
+    }
+    setInstallPath(targetDir);
+
+    window.electronAPI?.logClient(`User initiated installation to ${targetDir}`);
     playCyberBlip(600, 'triangle', 0.08);
     setInstalling(true);
-    setProgress(0);
+    setInstallError(null);
+    setProgress(5);
     setStatus('Preparing installation matrix...');
-    const result = await window.electronAPI?.installApp({
-      targetDir: installPath,
-      createDesktopShortcut: createShortcut
-    });
 
-    if (result?.success) {
-      setInstalledPath(result.exePath);
-      setCountdown(3);
-    } else {
-      setStatus('Installation failed: ' + (result?.error || 'Unknown error'));
+    try {
+      const result = await window.electronAPI?.installApp({
+        targetDir: targetDir,
+        createDesktopShortcut: createShortcut
+      });
+
+      if (result?.success) {
+        window.electronAPI?.logClient(`Installation completed successfully: ${result.exePath}`);
+        setInstalledPath(result.exePath);
+        setCountdown(3);
+      } else {
+        const errMsg = result?.error || 'Unknown installation failure';
+        window.electronAPI?.logClient(`Installation failed: ${errMsg}`);
+        setInstallError(errMsg);
+        setStatus('Installation Error: ' + errMsg);
+      }
+    } catch (err) {
+      const errMsg = err?.message || 'Unexpected exception during install';
+      window.electronAPI?.logClient(`Installation error exception: ${errMsg}`);
+      setInstallError(errMsg);
+      setStatus('Installation Error: ' + errMsg);
     }
   };
 
   const handleRetry = () => {
+    window.electronAPI?.logClient('User clicked retry install');
     setInstalling(false);
+    setInstallError(null);
     setStatus('');
     setProgress(0);
   };
@@ -435,10 +476,23 @@ function App() {
         </button>
 
         <div className="window-controls">
-          <button onClick={() => window.electronAPI?.windowMinimize()} title="Minimize">
+          <button 
+            onClick={() => {
+              window.electronAPI?.logClient('User clicked Minimize button');
+              window.electronAPI?.windowMinimize();
+            }} 
+            title="Minimize"
+          >
             <Minus size={15} />
           </button>
-          <button onClick={() => window.electronAPI?.windowClose()} className="close-btn" title="Close">
+          <button 
+            onClick={() => {
+              window.electronAPI?.logClient('User clicked Close button');
+              window.electronAPI?.windowClose();
+            }} 
+            className="close-btn" 
+            title="Close"
+          >
             <X size={15} />
           </button>
         </div>
@@ -647,10 +701,10 @@ function App() {
               </div>
 
               <h2 className="hud-title">
-                {status.startsWith('Install failed') ? 'Installation Error' : 'Installing Client'}
+                {installError ? 'Installation Error' : 'Installing Client'}
               </h2>
               <p className="hud-sub">
-                {status.startsWith('Install failed') 
+                {installError 
                   ? 'An error occurred during extraction' 
                   : 'Setting up files, audio drivers, and shaders...'}
               </p>
@@ -658,7 +712,7 @@ function App() {
               {/* Progress Bar Container */}
               <div className="progress-bar-container">
                 <div 
-                  className={`progress-bar-fill ${status.startsWith('Install failed') ? 'error' : ''}`} 
+                  className={`progress-bar-fill ${installError ? 'error' : ''}`} 
                   style={{ width: `${progress}%` }}
                 >
                   <div className="progress-glow-head"></div>
@@ -671,7 +725,7 @@ function App() {
               </div>
 
               {/* Live Phased Milestone Checkpoints */}
-              {!status.startsWith('Install failed') && (
+              {!installError && (
                 <div className="milestone-checkpoints">
                   {INSTALL_MILESTONES.map((m) => {
                     const isDone = progress >= m.threshold;
@@ -697,7 +751,7 @@ function App() {
                 </div>
               )}
 
-              {status.startsWith('Install failed') && (
+              {installError && (
                 <div className="action-area">
                   <button className="cyber-btn secondary" onClick={handleRetry}>
                     <RotateCcw size={16} />

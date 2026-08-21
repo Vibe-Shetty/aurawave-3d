@@ -1,14 +1,29 @@
-// Import our modules
+// AuraWave 3D Modular Application Entrypoint
 import './state.js';
 import './audio.js';
-import './ui.js'; 
-import './render.js'; 
+import { initUI } from './ui.js';
+import './render.js';
 
-// PWA Service Worker Registration
-import { registerSW } from 'virtual:pwa-register';
-registerSW({ immediate: true });
+// Automatically unregister any stale Service Worker caches from previous sessions
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    for (let registration of registrations) {
+      registration.unregister();
+    }
+  });
+  if ('caches' in window) {
+    caches.keys().then(names => {
+      for (let name of names) {
+        caches.delete(name);
+      }
+    });
+  }
+}
 
-// Global error handler just in case
+// Initialize UI interactions, shortcuts, and waveform
+initUI();
+
+// Global unhandled error boundary
 window.addEventListener('error', (e) => {
-    console.error("AuraWave 3D Error:", e.error);
+  console.warn("AuraWave 3D Warning:", e.error);
 });

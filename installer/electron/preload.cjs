@@ -16,5 +16,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
   outroComplete: () => ipcRenderer.send('outro-complete'),
   logClient: (msg) => ipcRenderer.send('log-client', msg),
 });
-
-

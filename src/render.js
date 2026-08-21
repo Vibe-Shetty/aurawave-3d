@@ -185,7 +185,17 @@ function animate() {
   requestAnimationFrame(animate);
 
   let avgFrequency = 0;
-  if (state.analyser && state.isPlaying && state.dataArray) {
+  if (state.audioSourceType === 'youtube' && state.isPlaying && state.dataArray) {
+    const t = state.time;
+    for (let i = 0; i < state.dataArray.length; i++) {
+      const bass = (Math.sin(t * 7) > 0.35 ? 180 : 70) * Math.max(0, 1 - i / 36);
+      const mids = Math.sin(t * 12 + i * 0.2) * 50 + 60;
+      const highs = Math.sin(t * 20 + i * 0.35) * 35 + 40;
+      state.dataArray[i] = Math.min(255, Math.floor(bass + mids + highs));
+    }
+    avgFrequency = 115;
+    state.targetEnergy = 0.55 + (Math.sin(state.time * 7) * 0.25 + 0.25) * 0.7;
+  } else if (state.analyser && state.isPlaying && state.dataArray) {
     state.analyser.getByteFrequencyData(state.dataArray);
     let sum = 0;
     for (let i = 0; i < state.dataArray.length; i++) {
@@ -270,15 +280,34 @@ function animate() {
   }
 
   posAttr.needsUpdate = true;
+
+  // Dynamic 3D Particle Mood Shift on Search Card Hover
+  const colAttr = geometry.attributes.color;
+  const colArr = colAttr.array;
+  if (state.hoverMood && state.hoverMood.colorA && state.hoverMood.colorB) {
+    const [rA, gA, bA] = state.hoverMood.colorA;
+    const [rB, gB, bB] = state.hoverMood.colorB;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const i3 = i * 3;
+      const ratio = i / PARTICLE_COUNT;
+      const targetR = THREE.MathUtils.lerp(rA, rB, ratio);
+      const targetG = THREE.MathUtils.lerp(gA, gB, ratio);
+      const targetB = THREE.MathUtils.lerp(bA, bB, ratio);
+      colArr[i3] += (targetR - colArr[i3]) * 0.08;
+      colArr[i3 + 1] += (targetG - colArr[i3 + 1]) * 0.08;
+      colArr[i3 + 2] += (targetB - colArr[i3 + 2]) * 0.08;
+    }
+    colAttr.needsUpdate = true;
+  }
+
   renderer.render(scene, camera);
 }
 
+
 animate();
 
-// Initialize Playlist Drawer View
-renderPlaylistDrawer();
-
 // Helper for memory management
+
 function disposeObject(obj) {
   if (obj.geometry) {
     obj.geometry.dispose();

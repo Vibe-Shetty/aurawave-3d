@@ -120,7 +120,14 @@ body {
 .window-controls {
   display: flex;
   height: 100%;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
+}
+
+.window-controls button,
+.music-toggle-btn {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 .window-controls button {
@@ -132,8 +139,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   transition: all 0.15s ease;
+  position: relative;
+  z-index: 9999;
+}
+
+.window-controls button * {
+  pointer-events: none !important;
 }
 
 .window-controls button:hover {

@@ -1,967 +1,1296 @@
-import { state } from './state.js';
+import { state, addRecentSearch, removeRecentSearch, clearRecentSearches } from './state.js';
+import { CURATED_STATIONS, searchGlobalMusic, resolveUrlMetadata, detectSceneIntent } from './streamDirectory.js';
+import { 
+  initAudio, 
+  playStream, 
+  playUploadedTrack, 
+  startSynthEngine, 
+  startLiveMic, 
+  togglePlayPause, 
+  updatePlayButtonUI, 
+  updateDockTrackInfo,
+  updateTimelineUI 
+} from './audio.js';
+
 // ============================================================================
-// 5. Playlist & Media Player Controller Logic
+// Minimalist UI Controller & Live Global Music Discovery Engine
 // ============================================================================
 
-function formatTime(seconds) {
-  if (isNaN(seconds) || seconds < 0) return "0:00";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+let searchDebounceTimer = null;
+
+export function initUI() {
+  setupSpotlightEvents();
+  setupDockControls();
+  setupShortcuts();
+  setupDragAndDrop();
+  setupVibeModal();
+  startWaveformRenderer();
+  
+  // Initial track info sync
+  updateDockTrackInfo();
+  renderInitialStations();
 }
 
-function updatePlayButtonUI(playing) {
-  const playToggle = document.getElementById('play-toggle');
-  if (playToggle) {
-    playToggle.textContent = playing ? '❚❚' : '▶';
-    playToggle.title = playing ? 'Pause (Space)' : 'Play (Space)';
-  }
-}
+// ----------------------------------------------------------------------------
+// 1. Spotlight Discovery Modal Engine
+// ----------------------------------------------------------------------------
 
-function showTrackDetails(track) {
-  const chip = document.getElementById('uploaded-track-chip');
-  const titleEl = document.getElementById('chip-title');
-  const metaEl = document.getElementById('chip-meta');
-  const viralTitleEl = document.getElementById('viral-tagline');
-  const vibeTagEl = document.getElementById('vibe-tag');
+function setupSpotlightEvents() {
+  const triggerBtn = document.getElementById('spotlight-trigger');
+  const modal = document.getElementById('spotlight-modal');
+  const closeBtn = document.getElementById('close-spotlight-btn');
+  const searchInput = document.getElementById('spotlight-input');
 
-  if (chip && titleEl && metaEl) {
-    titleEl.textContent = track.title;
-    metaEl.textContent = `${track.artist} • ${track.language || track.genre}`;
-    chip.style.display = 'flex';
-  }
+  async function openSpotlight() {
+    state.spotlightOpen = true;
+    modal.style.display = 'flex';
 
-  if (viralTitleEl) {
-    viralTitleEl.textContent = track.title;
-  }
-
-  if (vibeTagEl) {
-    vibeTagEl.textContent = `${track.genre || 'Audio Experience'} • AuraWave`;
-  }
-}
-
-function playTrack(index) {
-  if (index < 0 || index >= state.playlist.length) return;
-  state.currentTrackIndex = index;
-  const track = state.playlist[state.currentTrackIndex];
-
-  initAudio();
-  showTrackDetails(track);
-
-  const audioSourceSelect = document.getElementById('audio-source');
-
-  state.audioSourceType = 'playlist';
-  if (audioSourceSelect) audioSourceSelect.value = 'playlist';
-  if (state.synthTimer) clearInterval(state.synthTimer);
-
-  if (state.masterAudioElement) {
-    if (state.masterAudioElement.src !== track.url) {
-      state.masterAudioElement.src = track.url;
-    }
-    state.masterAudioElement.currentTime = 0; // Force restart from beginning
-    state.masterAudioElement.play().catch(e => console.log("Play error:", e));
-    state.isPlaying = true;
-    updatePlayButtonUI(true);
-  }
-
-  renderPlaylistDrawer();
-}
-
-function togglePlayPause() {
-  initAudio();
-  if (state.isPlaying) {
-    stopAudio();
-  } else {
-    state.isPlaying = true;
-    updatePlayButtonUI(true);
-    
-    if (state.audioSourceType === 'synth') {
-      startSynthEngine(state.selectedPreset);
-    } else if (state.audioSourceType === 'playlist') {
-      if (state.playlist.length > 0) {
-        playTrack(state.currentTrackIndex);
-      } else {
-        alert("Playlist is empty. Please upload some songs.");
-        state.isPlaying = false;
-        updatePlayButtonUI(false);
+    // 📋 Feature 3: Smart Clipboard Auto-Detect
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const clipText = await navigator.clipboard.readText();
+        if (clipText && (clipText.includes('youtube.com/watch') || clipText.includes('youtu.be/') || clipText.includes('.mp3') || clipText.includes('.ogg') || clipText.startsWith('http'))) {
+          state.clipboardDetectedLink = clipText.trim();
+        }
       }
-    } else if (state.audioSourceType === 'mic') {
-      startMicInput();
-    }
+    } catch (e) {}
+
+    renderInitialStations();
+
+    setTimeout(() => {
+      modal.classList.add('visible');
+      if (searchInput) searchInput.focus();
+    }, 10);
+  }
+
+  function closeSpotlight() {
+    state.spotlightOpen = false;
+    state.hoverMood = null;
+    if (searchInput) searchInput.value = '';
+    modal.classList.remove('visible');
+    setTimeout(() => {
+      modal.style.display = 'none';
+      renderInitialStations();
+    }, 200);
+  }
+
+  if (triggerBtn) triggerBtn.addEventListener('click', openSpotlight);
+  
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (searchInput && searchInput.value.trim().length > 0) {
+        // Clear text and return to pre-search discovery view
+        searchInput.value = '';
+        searchInput.focus();
+        renderInitialStations();
+      } else {
+        closeSpotlight();
+      }
+    });
+  }
+
+  // Close on backdrop click (clicking outside the modal)
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeSpotlight();
+    });
+  }
+
+  // Category Filter Pills Handler
+  const filterPills = document.querySelectorAll('.filter-pill');
+  filterPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      filterPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      state.activeSearchFilter = pill.dataset.filter;
+      
+      // Shift 3D particle background mood to this category immediately
+      setFilterParticleMood(state.activeSearchFilter);
+
+      const query = searchInput ? searchInput.value.trim() : '';
+      if (!query || query.length === 0) {
+        renderInitialStations();
+      } else {
+        executeLiveSearch(query);
+      }
+    });
+  });
+
+  // Real-Time Global Search with 250ms Debounce
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+
+      const resultsList = document.getElementById('spotlight-results-list');
+      if (resultsList && query.length > 0) {
+        resultsList.innerHTML = `
+          <div class="search-loading-state">
+            <div class="search-spinner"></div>
+            <p>Searching global music catalogue for "<strong>${escapeHtml(query)}</strong>"...</p>
+          </div>
+        `;
+      }
+
+      searchDebounceTimer = setTimeout(async () => {
+        await executeLiveSearch(query);
+      }, 250);
+    });
+
+    searchInput.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        const query = searchInput.value.trim();
+        // Check if user entered a direct stream URL or YouTube link
+        if (query.startsWith('http://') || query.startsWith('https://')) {
+          const meta = await resolveUrlMetadata(query);
+          addRecentSearch(meta);
+          playStream(meta);
+          closeSpotlight();
+        } else {
+          // Play top search result hero card or first matching song
+          const topCard = document.querySelector('.top-result-hero-card') || document.querySelector('.compact-song-row');
+          if (topCard) topCard.click();
+        }
+      }
+    });
   }
 }
 
-function nextTrack() {
-  if (state.audioSourceType === 'synth') {
-    const idx = state.SYNTH_PRESETS.indexOf(state.selectedPreset);
-    state.selectedPreset = state.SYNTH_PRESETS[(idx + 1) % state.SYNTH_PRESETS.length];
-    const synthPresetSelect = document.getElementById('synth-preset');
-    if (synthPresetSelect) synthPresetSelect.value = state.selectedPreset;
-    if (state.isPlaying) startSynthEngine(state.selectedPreset);
-    return;
-  }
+// ----------------------------------------------------------------------------
+// 2. Pre-Search Trending View & Spotify-Style 2-Column Search View
+// ----------------------------------------------------------------------------
 
-  if (state.playlist.length === 0) return;
-  let nextIdx = state.currentTrackIndex + 1;
-  if (state.isShuffle && state.playlist.length > 1) {
-    do {
-      nextIdx = Math.floor(Math.random() * state.playlist.length);
-    } while (nextIdx === state.currentTrackIndex);
-  } else if (nextIdx >= state.playlist.length) {
-    nextIdx = 0;
+const GENRE_DISCOVERY_MAP = {
+  all: {
+    title: '🔥 Trending Soundscapes & 24/7 Streams',
+    stations: CURATED_STATIONS,
+    creatorsTitle: '🎧 Popular Artists & Creators',
+    creators: [
+      { name: 'LIL VINCEYY', genre: 'Hip-Hop', avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80', query: 'Lil Vinceyy' },
+      { name: 'The Weeknd', genre: 'R&B / Pop', avatar: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&auto=format&fit=crop&q=80', query: 'The Weeknd' },
+      { name: 'Daft Punk', genre: 'Electronic', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&auto=format&fit=crop&q=80', query: 'Daft Punk' },
+      { name: 'Hans Zimmer', genre: 'Cinematic', avatar: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=200&auto=format&fit=crop&q=80', query: 'Hans Zimmer' },
+      { name: 'Lofi Girl', genre: 'Lo-Fi Chill', avatar: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=200&auto=format&fit=crop&q=80', query: 'Lofi Girl' },
+      { name: 'Nightwave Plaza', genre: 'Synthwave', avatar: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=200&auto=format&fit=crop&q=80', query: 'Synthwave' }
+    ]
+  },
+  radio: {
+    title: '📻 24/7 Live Web Radio Stations (Zero Ads)',
+    stations: CURATED_STATIONS,
+    creatorsTitle: '📡 Featured Radio Broadcasters',
+    creators: [
+      { name: 'SomaFM DEF CON', genre: 'Cyberpunk Radio', avatar: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=200&auto=format&fit=crop&q=80', query: 'DEF CON Radio' },
+      { name: 'SomaFM Space Station', genre: 'Cosmic Radio', avatar: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=200&auto=format&fit=crop&q=80', query: 'SomaFM Space' },
+      { name: 'Laut.fm Lo-Fi', genre: 'Chillhop Radio', avatar: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=200&auto=format&fit=crop&q=80', query: 'Lo-Fi Radio' },
+      { name: 'SomaFM Groove Salad', genre: 'Ambient Chill', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&auto=format&fit=crop&q=80', query: 'Groove Salad' }
+    ]
+  },
+  synthwave: {
+    title: '🌆 Cyberpunk, Retrowave & Outrun Soundscapes',
+    stations: [
+      CURATED_STATIONS[0],
+      CURATED_STATIONS[5],
+      CURATED_STATIONS[6]
+    ],
+    creatorsTitle: '⚡ Legendary Synthwave Artists',
+    creators: [
+      { name: 'Kavinsky', genre: 'Synthwave / French House', avatar: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=200&auto=format&fit=crop&q=80', query: 'Kavinsky' },
+      { name: 'Carpenter Brut', genre: 'Darksynth / Electro', avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80', query: 'Carpenter Brut' },
+      { name: 'Perturbator', genre: 'Cyberpunk Synth', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&auto=format&fit=crop&q=80', query: 'Perturbator' },
+      { name: 'The Midnight', genre: 'Synthpop / Retrowave', avatar: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80', query: 'The Midnight' },
+      { name: 'Gunship', genre: 'Synthwave', avatar: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=200&auto=format&fit=crop&q=80', query: 'Gunship' }
+    ]
+  },
+  lofi: {
+    title: '☕ Midnight Lo-Fi, Chillhop & Study Beats',
+    stations: [
+      CURATED_STATIONS[1],
+      CURATED_STATIONS[4]
+    ],
+    creatorsTitle: '🍃 Famous Lo-Fi Creators',
+    creators: [
+      { name: 'Lofi Girl', genre: 'Lo-Fi Beats', avatar: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=200&auto=format&fit=crop&q=80', query: 'Lofi Girl' },
+      { name: 'Kupla', genre: 'Chillhop', avatar: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=200&auto=format&fit=crop&q=80', query: 'Kupla' },
+      { name: 'potsu', genre: 'Lo-Fi Jazz', avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80', query: 'potsu' },
+      { name: 'Idealism', genre: 'Chill Lo-Fi', avatar: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&auto=format&fit=crop&q=80', query: 'Idealism' },
+      { name: 'Chillhop Music', genre: 'Study Beats', avatar: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80', query: 'Chillhop Music' }
+    ]
+  },
+  phonk: {
+    title: '🏎️ Tokyo Drift Phonk & Heavy Bass',
+    stations: [
+      CURATED_STATIONS[2]
+    ],
+    creatorsTitle: '🔥 Top Phonk Producers',
+    creators: [
+      { name: 'Kordhell', genre: 'Drift Phonk', avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80', query: 'Kordhell' },
+      { name: 'DVRST', genre: 'Phonk / Bass', avatar: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=200&auto=format&fit=crop&q=80', query: 'DVRST' },
+      { name: 'Hensonn', genre: 'Drift Phonk', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&auto=format&fit=crop&q=80', query: 'Hensonn' },
+      { name: 'Pharmacist', genre: 'Hard Phonk', avatar: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=200&auto=format&fit=crop&q=80', query: 'Pharmacist' },
+      { name: 'Ghostface Playa', genre: 'Phonk', avatar: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80', query: 'Ghostface Playa' }
+    ]
+  },
+  songs: {
+    title: '🎵 Trending Global Hits & Songs',
+    stations: [
+      { id: 'top-starboy', title: 'Starboy (ft. Daft Punk)', artist: 'The Weeknd', genre: 'Pop / R&B', cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&auto=format&fit=crop&q=80', query: 'The Weeknd Starboy', isLive: false },
+      { id: 'top-chinita', title: 'Chinita Girl', artist: 'Lil Vinceyy ft. Guel', genre: 'Hip-Hop', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80', query: 'Chinita Girl Lil Vinceyy', isLive: false },
+      { id: 'top-nadaan', title: 'Nadaan Parinde', artist: 'A.R. Rahman | Mohit Chauhan', genre: 'Bollywood / Rock', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80', query: 'Nadaan Parinde Rockstar', isLive: false },
+      { id: 'top-midnight', title: 'Midnight City', artist: 'M83', genre: 'Synthpop', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&auto=format&fit=crop&q=80', query: 'M83 Midnight City', isLive: false }
+    ],
+    creatorsTitle: '🌟 Featured Song Artists',
+    creators: [
+      { name: 'The Weeknd', genre: 'R&B / Pop', avatar: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&auto=format&fit=crop&q=80', query: 'The Weeknd' },
+      { name: 'Lil Vinceyy', genre: 'Hip-Hop', avatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80', query: 'Lil Vinceyy' },
+      { name: 'A.R. Rahman', genre: 'Composer / World', avatar: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=200&auto=format&fit=crop&q=80', query: 'A.R. Rahman' },
+      { name: 'Daft Punk', genre: 'Electronic', avatar: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&auto=format&fit=crop&q=80', query: 'Daft Punk' }
+    ]
   }
-  playTrack(nextIdx);
-}
+};
 
-function prevTrack() {
-  if (state.audioSourceType === 'synth') {
-    const idx = state.SYNTH_PRESETS.indexOf(state.selectedPreset);
-    state.selectedPreset = state.SYNTH_PRESETS[(idx - 1 + state.SYNTH_PRESETS.length) % state.SYNTH_PRESETS.length];
-    const synthPresetSelect = document.getElementById('synth-preset');
-    if (synthPresetSelect) synthPresetSelect.value = state.selectedPreset;
-    if (state.isPlaying) startSynthEngine(state.selectedPreset);
-    return;
-  }
-
-  if (state.playlist.length === 0) return;
-  if (state.audioSourceType === 'playlist' && state.masterAudioElement && state.masterAudioElement.currentTime > 3) {
-    state.masterAudioElement.currentTime = 0;
-    return;
-  }
-  let prevIdx = state.currentTrackIndex - 1;
-  if (prevIdx < 0) {
-    prevIdx = state.playlist.length - 1;
-  }
-  playTrack(prevIdx);
-}
-
-function seekRelative(seconds) {
-  if (state.audioSourceType === 'playlist' && state.masterAudioElement) {
-    state.masterAudioElement.currentTime = Math.max(0, Math.min(state.masterAudioElement.duration || 0, state.masterAudioElement.currentTime + seconds));
-    updateTimeline();
-  } else if (state.audioSourceType === 'synth') {
-    const track = state.playlist[state.currentTrackIndex];
-    const dur = (track && track.duration) || 180;
-    state.synthTimeElapsed = Math.max(0, Math.min(dur, state.synthTimeElapsed + seconds));
-    updateTimeline();
-  }
-}
-
-function handleTrackEnded() {
-  if (state.repeatMode === 'one') {
-    playTrack(state.currentTrackIndex);
-  } else if (state.repeatMode === 'all') {
-    nextTrack();
+function setFilterParticleMood(filterKey) {
+  if (filterKey === 'synthwave') {
+    state.hoverMood = { colorA: [0.02, 0.94, 1.0], colorB: [0.95, 0.25, 0.6] };
+  } else if (filterKey === 'lofi') {
+    state.hoverMood = { colorA: [0.95, 0.6, 0.2], colorB: [0.4, 0.2, 0.8] };
+  } else if (filterKey === 'phonk') {
+    state.hoverMood = { colorA: [0.9, 0.1, 0.3], colorB: [0.15, 0.1, 0.35] };
+  } else if (filterKey === 'radio') {
+    state.hoverMood = { colorA: [0.1, 0.4, 0.95], colorB: [0.1, 0.85, 0.65] };
   } else {
-    if (state.currentTrackIndex < state.playlist.length - 1) {
-      nextTrack();
-    } else {
-      stopAudio();
-    }
+    state.hoverMood = null;
   }
 }
 
-function updateTimeline() {
-  if (state.isDraggingScrubber) return;
+function renderInitialStations() {
+  const container = document.getElementById('spotlight-results-list');
+  if (!container) return;
 
-  const currentLabel = document.getElementById('current-time');
-  const totalLabel = document.getElementById('total-duration');
-  const progressEl = document.getElementById('timeline-progress');
-  const handleEl = document.getElementById('timeline-handle');
-  const bufferedEl = document.getElementById('timeline-buffered');
+  const currentCategory = GENRE_DISCOVERY_MAP[state.activeSearchFilter] || GENRE_DISCOVERY_MAP.all;
 
-  let cur = 0;
-  let dur = 0;
-
-  if (state.audioSourceType === 'playlist' && state.masterAudioElement) {
-    cur = state.masterAudioElement.currentTime || 0;
-    dur = state.masterAudioElement.duration || 0;
-
-    if (state.masterAudioElement.buffered && state.masterAudioElement.buffered.length > 0) {
-      const bufferedEnd = state.masterAudioElement.buffered.end(state.masterAudioElement.buffered.length - 1);
-      const bufPct = (bufferedEnd / (dur || 1)) * 100;
-      if (bufferedEl) bufferedEl.style.width = `${bufPct}%`;
-    }
-  } else if (state.audioSourceType === 'synth') {
-    const track = state.playlist[state.currentTrackIndex];
-    dur = (track && track.duration) || 180;
-    cur = state.synthTimeElapsed % dur;
-  }
-
-  const pct = dur > 0 ? (cur / dur) * 100 : 0;
-
-  if (currentLabel) currentLabel.textContent = formatTime(cur);
-  if (totalLabel) totalLabel.textContent = formatTime(dur);
-  if (progressEl) progressEl.style.width = `${pct}%`;
-  if (handleEl) handleEl.style.left = `${pct}%`;
-}
-
-// Scrubber Click & Drag Seek
-const timelineContainer = document.getElementById('timeline-container');
-if (timelineContainer) {
-  let dragRatio = 0;
-
-  function updateVisualScrubber(e) {
-    const rect = timelineContainer.getBoundingClientRect();
-    const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    dragRatio = clickX / rect.width;
-
-    // Update visuals immediately without triggering timeupdate loops
-    const progressEl = document.getElementById('timeline-progress');
-    const handleEl = document.getElementById('timeline-handle');
-    const currentLabel = document.getElementById('current-time');
-
-    if (progressEl) progressEl.style.width = `${dragRatio * 100}%`;
-    if (handleEl) handleEl.style.left = `${dragRatio * 100}%`;
-
-    // Update state.time label visually
-    let dur = 180;
-    if (state.audioSourceType === 'playlist' && state.masterAudioElement && state.masterAudioElement.duration) {
-      dur = state.masterAudioElement.duration;
-    } else if (state.audioSourceType === 'synth') {
-      const track = state.playlist[state.currentTrackIndex];
-      if (track && track.duration) dur = track.duration;
-    }
-    if (currentLabel) currentLabel.textContent = formatTime(dragRatio * dur);
-  }
-
-  function commitSeek() {
-    if (state.audioSourceType === 'playlist' && state.masterAudioElement && state.masterAudioElement.duration) {
-      state.masterAudioElement.currentTime = dragRatio * state.masterAudioElement.duration;
-    } else if (state.audioSourceType === 'synth') {
-      const track = state.playlist[state.currentTrackIndex];
-      const dur = (track && track.duration) || 180;
-      state.synthTimeElapsed = dragRatio * dur;
-    }
-    state.isDraggingScrubber = false; // Reset before updateTimeline so it updates
-    updateTimeline();
-  }
-
-  timelineContainer.addEventListener('mousedown', (e) => {
-    state.isDraggingScrubber = true;
-    updateVisualScrubber(e);
-    const onMouseMove = (ev) => updateVisualScrubber(ev);
-    const onMouseUp = () => {
-      commitSeek();
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  });
-}
-
-// ============================================================================
-// 6. Volume, Shuffle & Repeat Controls
-// ============================================================================
-
-const volumeSlider = document.getElementById('volume-slider');
-const volumeBtn = document.getElementById('volume-btn');
-
-function setVolume(val) {
-  state.currentVolume = parseFloat(val);
-  state.isMuted = state.currentVolume === 0;
-  if (state.masterAudioElement) {
-    state.masterAudioElement.volume = state.currentVolume;
-  }
-  updateVolumeUI();
-}
-
-function toggleMute() {
-  state.isMuted = !state.isMuted;
-  if (state.masterAudioElement) {
-    state.masterAudioElement.volume = state.isMuted ? 0 : state.currentVolume;
-  }
-  if (volumeSlider) {
-    volumeSlider.value = state.isMuted ? 0 : state.currentVolume;
-  }
-  updateVolumeUI();
-}
-
-function updateVolumeUI() {
-  if (volumeBtn) {
-    if (state.isMuted || state.currentVolume === 0) {
-      volumeBtn.textContent = '🔇';
-    } else if (state.currentVolume < 0.5) {
-      volumeBtn.textContent = '🔉';
-    } else {
-      volumeBtn.textContent = '🔊';
-    }
-  }
-}
-
-if (volumeSlider) {
-  volumeSlider.addEventListener('input', (e) => setVolume(e.target.value));
-}
-if (volumeBtn) {
-  volumeBtn.addEventListener('click', toggleMute);
-}
-
-// Shuffle & Repeat Buttons
-const shuffleBtn = document.getElementById('shuffle-btn');
-if (shuffleBtn) {
-  shuffleBtn.addEventListener('click', () => {
-    state.isShuffle = !state.isShuffle;
-    shuffleBtn.classList.toggle('active', state.isShuffle);
-  });
-}
-
-const repeatBtn = document.getElementById('repeat-btn');
-if (repeatBtn) {
-  repeatBtn.addEventListener('click', () => {
-    if (state.repeatMode === 'all') {
-      state.repeatMode = 'one';
-      repeatBtn.textContent = '🔂';
-      repeatBtn.classList.add('active');
-    } else if (state.repeatMode === 'one') {
-      state.repeatMode = 'off';
-      repeatBtn.textContent = '🔁';
-      repeatBtn.classList.remove('active');
-    } else {
-      state.repeatMode = 'all';
-      repeatBtn.textContent = '🔁';
-      repeatBtn.classList.add('active');
-    }
-  });
-}
-
-// ============================================================================
-// 7. Playlist Drawer Rendering & Management
-// ============================================================================
-
-const playlistDrawer = document.getElementById('playlist-drawer');
-const playlistToggleBtn = document.getElementById('playlist-toggle-btn');
-const closePlaylistBtn = document.getElementById('close-playlist-btn');
-const playlistTrackList = document.getElementById('playlist-track-list');
-const playlistBadge = document.getElementById('playlist-count-badge');
-const queueStatusText = document.getElementById('queue-status-text');
-
-function togglePlaylistDrawer() {
-  if (playlistDrawer) {
-    playlistDrawer.classList.toggle('open');
-  }
-}
-
-if (playlistToggleBtn) playlistToggleBtn.addEventListener('click', togglePlaylistDrawer);
-if (closePlaylistBtn) closePlaylistBtn.addEventListener('click', togglePlaylistDrawer);
-
-let draggedTrackIndex = null;
-
-function renderPlaylistDrawer() {
-  if (playlistBadge) playlistBadge.textContent = state.playlist.length;
-  if (queueStatusText) queueStatusText.textContent = `${state.playlist.length} track${state.playlist.length === 1 ? '' : 's'} available`;
-
-  if (!playlistTrackList) return;
-  playlistTrackList.innerHTML = '';
-
-  state.playlist.forEach((track, idx) => {
-    const isCurrent = idx === state.currentTrackIndex && state.audioSourceType === 'playlist';
-    const item = document.createElement('div');
-    item.className = `track-item ${isCurrent ? 'active' : ''}`;
-    
-    // Make Draggable
-    item.draggable = true;
-    
-    item.innerHTML = `
-      <div class="track-left">
-        <span class="track-number">${idx + 1}</span>
-        <div class="mini-equalizer">
-          <div class="eq-bar"></div>
-          <div class="eq-bar"></div>
-          <div class="eq-bar"></div>
-          <div class="eq-bar"></div>
-        </div>
-        <div class="track-details">
-          <span class="track-title" title="${track.title}">${track.title}</span>
-          <span class="track-artist">${track.artist} • ${track.genre || track.language}</span>
+  // 1. Feature 3: Clipboard Detection Banner HTML
+  const clipboardHTML = state.clipboardDetectedLink ? `
+    <div class="clipboard-detect-banner">
+      <div class="clipboard-banner-info">
+        <span class="clipboard-icon">📋</span>
+        <div class="clipboard-text-block">
+          <span class="clipboard-title">Detected Stream Link in Clipboard</span>
+          <span class="clipboard-url">${escapeHtml(state.clipboardDetectedLink)}</span>
         </div>
       </div>
-      <div class="track-right">
-        <span class="track-duration">${formatTime(track.duration || 0)}</span>
-        <button class="track-delete-btn" title="Remove track" data-index="${idx}">🗑️</button>
+      <button class="clipboard-play-btn" id="clipboard-stream-now-btn">▶ Stream Now</button>
+    </div>
+  ` : '';
+
+  // 2. Feature 1: Recent Searches Quick-Recall Row HTML
+  const recentHTML = state.recentSearches && state.recentSearches.length > 0 ? `
+    <div class="recent-searches-section">
+      <div class="recent-searches-header">
+        <span class="recent-label">🕒 Recent Searches</span>
+        <button class="recent-clear-btn" id="clear-all-recents-btn">Clear</button>
+      </div>
+      <div class="recent-pills-row">
+        ${state.recentSearches.map(r => `
+          <div class="recent-pill" data-recent-query="${escapeHtml(r.query || r.title)}">
+            <span class="recent-pill-title">${escapeHtml(r.title)}</span>
+            <button class="recent-pill-remove" data-recent-id="${r.id}" title="Remove">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div class="presearch-section">
+      
+      ${clipboardHTML}
+      ${recentHTML}
+
+      <div>
+        <h3 class="results-column-title">${currentCategory.title}</h3>
+        <div class="presearch-cards-grid">
+          ${currentCategory.stations.map(st => `
+            <div class="trending-card" data-station-id="${st.id}" data-genre="${st.genre}" data-query="${st.query || ''}">
+              <img src="${st.cover}" alt="Cover" class="trending-thumb" onerror="this.src='https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=300&auto=format&fit=crop&q=80'">
+              <div class="trending-info">
+                <span class="trending-title">${escapeHtml(st.title)}</span>
+                <span class="trending-sub">${escapeHtml(st.artist)} • ${escapeHtml(st.genre)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="related-creators-section">
+        <h3 class="results-column-title">${currentCategory.creatorsTitle}</h3>
+        <div class="creators-carousel-row">
+          ${currentCategory.creators.map(cr => `
+            <div class="creator-card" data-creator-query="${escapeHtml(cr.query)}" data-genre="${cr.genre}">
+              <img src="${cr.avatar}" alt="${escapeHtml(cr.name)}" class="creator-avatar-img">
+              <span class="creator-name">${escapeHtml(cr.name)}</span>
+              <span class="creator-badge">${escapeHtml(cr.genre)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // Attach Clipboard Banner Play Listener
+  const clipBtn = document.getElementById('clipboard-stream-now-btn');
+  if (clipBtn && state.clipboardDetectedLink) {
+    clipBtn.addEventListener('click', async () => {
+      const meta = await resolveUrlMetadata(state.clipboardDetectedLink);
+      addRecentSearch(meta);
+      playStream(meta);
+      closeSpotlightModal();
+    });
+  }
+
+  // Attach Recent Searches Click & Remove Listeners
+  container.querySelectorAll('.recent-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      if (e.target.classList.contains('recent-pill-remove')) return;
+      const query = pill.dataset.recentQuery;
+      const input = document.getElementById('spotlight-input');
+      if (input) {
+        input.value = query;
+        executeLiveSearch(query);
+      }
+    });
+  });
+
+  container.querySelectorAll('.recent-pill-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.recentId;
+      removeRecentSearch(id);
+      renderInitialStations();
+    });
+  });
+
+  const clearAllBtn = document.getElementById('clear-all-recents-btn');
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearRecentSearches();
+      renderInitialStations();
+    });
+  }
+
+  // Attach Trending Station / Curated Card Click Listeners
+  container.querySelectorAll('.trending-card').forEach(card => {
+    attachHoverMoodListener(card, card.dataset.genre);
+    card.addEventListener('click', () => {
+      const stationId = card.dataset.stationId;
+      const query = card.dataset.query;
+      
+      if (query) {
+        const input = document.getElementById('spotlight-input');
+        if (input) input.value = query;
+        executeLiveSearch(query);
+      } else {
+        const station = currentCategory.stations.find(s => s.id === stationId);
+        if (station) {
+          addRecentSearch(station);
+          playStream(station);
+          closeSpotlightModal();
+        }
+      }
+    });
+  });
+
+  // Attach Popular Creator Click Listeners (Launches Search)
+  container.querySelectorAll('.creator-card').forEach(card => {
+    attachHoverMoodListener(card, card.dataset.genre);
+    card.addEventListener('click', () => {
+      const query = card.dataset.creatorQuery;
+      const input = document.getElementById('spotlight-input');
+      if (input) {
+        input.value = query;
+        executeLiveSearch(query);
+      }
+    });
+  });
+}
+
+async function executeLiveSearch(query) {
+  const container = document.getElementById('spotlight-results-list');
+  if (!container) return;
+
+  if (!query || query.length === 0) {
+    renderInitialStations();
+    return;
+  }
+
+  // 1. Direct URL Check
+  if (query.startsWith('http://') || query.startsWith('https://')) {
+    const meta = await resolveUrlMetadata(query);
+
+    container.innerHTML = `
+      <div class="top-result-hero-card" data-is-direct="true" data-genre="Direct Stream" style="max-width: 480px; margin: 0 auto;">
+        <div class="hero-cover-wrap">
+          <img src="${meta.cover}" alt="Cover" class="hero-cover-img" onerror="this.src='https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80'">
+          <button class="hero-play-fab" title="Stream Now">▶</button>
+        </div>
+        <div class="hero-info-block">
+          <span class="hero-track-title">${escapeHtml(meta.title)}</span>
+          <span class="hero-track-artist">${escapeHtml(meta.artist)}</span>
+          <div class="hero-badges-row">
+            <span class="hero-type-pill">${meta.isYouTube ? 'YOUTUBE' : 'STREAM'}</span>
+            <span class="hero-energy-pill">⚡ DIRECT LINK</span>
+          </div>
+        </div>
       </div>
     `;
 
-    // Drag and Drop Listeners
-    item.addEventListener('dragstart', (e) => {
-      draggedTrackIndex = idx;
-      item.style.opacity = '0.4';
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', idx);
-    });
-
-    item.addEventListener('dragend', (e) => {
-      item.style.opacity = '1';
-      const allItems = playlistTrackList.querySelectorAll('.track-item');
-      allItems.forEach(i => {
-        i.style.borderTop = '';
-        i.style.borderBottom = '';
+    const directCard = container.querySelector('.top-result-hero-card');
+    if (directCard) {
+      attachHoverMoodListener(directCard, 'Electronic');
+      directCard.addEventListener('click', () => {
+        addRecentSearch(meta);
+        playStream(meta);
+        closeSpotlightModal();
       });
-    });
-
-    item.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const bounding = item.getBoundingClientRect();
-      const offset = bounding.y + (bounding.height / 2);
-      if (e.clientY - offset > 0) {
-        item.style.borderTop = '';
-        item.style.borderBottom = '2px solid var(--accent)';
-      } else {
-        item.style.borderTop = '2px solid var(--accent)';
-        item.style.borderBottom = '';
-      }
-    });
-
-    item.addEventListener('dragleave', (e) => {
-      item.style.borderTop = '';
-      item.style.borderBottom = '';
-    });
-
-    item.addEventListener('drop', (e) => {
-      e.preventDefault();
-      item.style.borderTop = '';
-      item.style.borderBottom = '';
-      
-      if (draggedTrackIndex === null || draggedTrackIndex === idx) return;
-
-      const bounding = item.getBoundingClientRect();
-      const offset = bounding.y + (bounding.height / 2);
-      let targetIndex = idx;
-      if (e.clientY - offset > 0) {
-        targetIndex = idx + 1;
-      }
-      
-      const draggedTrack = state.playlist[draggedTrackIndex];
-      state.playlist.splice(draggedTrackIndex, 1);
-      
-      if (draggedTrackIndex < targetIndex) {
-        targetIndex--;
-      }
-      
-      state.playlist.splice(targetIndex, 0, draggedTrack);
-      
-      if (state.currentTrackIndex === draggedTrackIndex) {
-        state.currentTrackIndex = targetIndex;
-      } else if (state.currentTrackIndex > draggedTrackIndex && state.currentTrackIndex <= targetIndex) {
-        state.currentTrackIndex--;
-      } else if (state.currentTrackIndex < draggedTrackIndex && state.currentTrackIndex >= targetIndex) {
-        state.currentTrackIndex++;
-      }
-      
-      draggedTrackIndex = null;
-      renderPlaylistDrawer();
-    });
-
-    item.addEventListener('click', (e) => {
-      if (e.target.closest('.track-delete-btn')) {
-        e.stopPropagation();
-        removeTrack(idx);
-      } else {
-        playTrack(idx);
-      }
-    });
-
-    playlistTrackList.appendChild(item);
-  });
-}
-
-function removeTrack(idx) {
-  if (idx < 0 || idx >= state.playlist.length) return;
-  const removed = state.playlist.splice(idx, 1)[0];
-  if (removed.url) {
-    URL.revokeObjectURL(removed.url);
-  }
-
-  if (state.playlist.length === 0) {
-    if (state.audioSourceType === 'playlist') stopAudio();
-    state.currentTrackIndex = 0;
-  } else if (idx === state.currentTrackIndex) {
-    state.currentTrackIndex = Math.min(state.currentTrackIndex, state.playlist.length - 1);
-    if (state.audioSourceType === 'playlist') playTrack(state.currentTrackIndex);
-  } else if (idx < state.currentTrackIndex) {
-    state.currentTrackIndex--;
-  }
-
-  renderPlaylistDrawer();
-}
-
-const clearDrawerBtn = document.getElementById('drawer-clear-btn');
-if (clearDrawerBtn) {
-  clearDrawerBtn.addEventListener('click', () => {
-    // Memory management: free up object URLs
-    state.playlist.forEach(track => {
-      if (track.url) URL.revokeObjectURL(track.url);
-    });
-    
-    state.playlist = [];
-    state.currentTrackIndex = 0;
-    if (state.audioSourceType === 'playlist') {
-       stopAudio();
     }
-    renderPlaylistDrawer();
+    return;
+  }
+
+  // 2. Feature 2: Natural Language / AI Scene Intent Detection
+  const sceneIntent = detectSceneIntent(query);
+  let searchQueryToUse = query;
+  if (sceneIntent) {
+    state.hoverMood = sceneIntent.mood;
+    searchQueryToUse = sceneIntent.vibePrompt;
+  }
+
+  let rawResults = await searchGlobalMusic(searchQueryToUse);
+
+  // Apply active category filter
+  let filteredResults = rawResults;
+  if (state.activeSearchFilter === 'songs') {
+    filteredResults = rawResults.filter(r => !r.isLive);
+  } else if (state.activeSearchFilter === 'radio') {
+    const matchingRadios = CURATED_STATIONS.filter(s =>
+      s.title.toLowerCase().includes(query.toLowerCase()) ||
+      s.artist.toLowerCase().includes(query.toLowerCase()) ||
+      s.genre.toLowerCase().includes(query.toLowerCase())
+    );
+    filteredResults = matchingRadios.length > 0 ? matchingRadios : rawResults;
+  } else if (state.activeSearchFilter === 'synthwave') {
+    const matching = rawResults.filter(r => (r.genre || '').toLowerCase().includes('synth') || (r.title || '').toLowerCase().includes('synth') || (r.artist || '').toLowerCase().includes('synth'));
+    filteredResults = matching.length > 0 ? matching : rawResults;
+  } else if (state.activeSearchFilter === 'lofi') {
+    const matching = rawResults.filter(r => (r.genre || '').toLowerCase().includes('lofi') || (r.genre || '').toLowerCase().includes('lo-fi') || (r.title || '').toLowerCase().includes('lofi') || (r.title || '').toLowerCase().includes('chill'));
+    filteredResults = matching.length > 0 ? matching : rawResults;
+  } else if (state.activeSearchFilter === 'phonk') {
+    const matching = rawResults.filter(r => (r.genre || '').toLowerCase().includes('phonk') || (r.title || '').toLowerCase().includes('phonk') || (r.title || '').toLowerCase().includes('drift') || (r.title || '').toLowerCase().includes('bass'));
+    filteredResults = matching.length > 0 ? matching : rawResults;
+  }
+
+  if (filteredResults.length === 0) {
+    filteredResults = rawResults;
+  }
+
+  if (!filteredResults || filteredResults.length === 0) {
+    container.innerHTML = `
+      <div class="empty-search-state">
+        <span class="empty-icon">📻</span>
+        <p>No tracks found for "<strong>${escapeHtml(query)}</strong>"</p>
+        <span class="empty-sub">Tip: Try searching by song title, artist name, scene (e.g. "late night drive"), or paste a YouTube link.</span>
+      </div>
+    `;
+    return;
+  }
+
+  renderSpotifySearchResults(container, filteredResults, query, sceneIntent);
+}
+
+function renderSpotifySearchResults(container, results, query, sceneIntent) {
+  const topResult = results[0];
+  const matchingSongs = results.slice(1, 5);
+  const relatedResults = results.slice(5, 12);
+
+  const topCover = topResult.cover || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80';
+  const topDuration = topResult.durationStr || (topResult.isLive ? 'LIVE' : '3:30');
+  
+  // Intelligent BPM calculation or assignment
+  const bpmTag = sceneIntent ? sceneIntent.bpmTag : getBpmTag(topResult);
+
+  // AI Scene Badge
+  const sceneBadgeHTML = sceneIntent ? `
+    <div class="ai-scene-badge">
+      <span>⚡ AI SCENE MATCH: ${escapeHtml(sceneIntent.sceneName)}</span>
+    </div>
+  ` : '';
+
+  const isTopPlaying = state.isPlaying && state.trackMeta && (state.trackMeta.title === topResult.title || state.trackMeta.id === topResult.id);
+
+  container.innerHTML = `
+    ${sceneBadgeHTML}
+    <div class="spotify-search-grid">
+      
+      <!-- Left Column: Top Result Hero Card -->
+      <div class="top-result-col">
+        <h3 class="results-column-title">Top result</h3>
+        <div class="top-result-hero-card ${isTopPlaying ? 'is-playing' : ''}" data-track-id="${topResult.id}" data-genre="${topResult.genre || 'Electronic'}">
+          <div class="hero-cover-wrap">
+            <img src="${topCover}" alt="${escapeHtml(topResult.title)}" class="hero-cover-img" onerror="this.src='https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80'">
+            <button class="hero-play-fab" title="Play Top Track">▶</button>
+          </div>
+          <div class="hero-info-block">
+            <span class="hero-track-title">${escapeHtml(topResult.title)}</span>
+            <span class="hero-track-artist">Song • ${escapeHtml(topResult.artist)}</span>
+            <div class="hero-badges-row">
+              <span class="hero-type-pill">${topResult.isYouTube ? 'YOUTUBE MUSIC' : (topResult.isLive ? 'LIVE STREAM' : 'FULL SONG')}</span>
+              <span class="hero-energy-pill">${bpmTag}</span>
+              <span class="hero-energy-pill">⏱ ${topDuration}</span>
+            </div>
+            <!-- Mini animated wavebars on hover -->
+            <div class="mini-eq-bars">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Matching Songs List -->
+      <div class="songs-list-col">
+        <h3 class="results-column-title">Songs</h3>
+        <div class="compact-songs-col">
+          ${matchingSongs.map((track) => {
+            const cover = track.cover || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80';
+            const dur = track.durationStr || (track.isLive ? 'LIVE' : '3:30');
+            const rowBpm = getBpmTag(track);
+            const isRowPlaying = state.isPlaying && state.trackMeta && (state.trackMeta.title === track.title || state.trackMeta.id === track.id);
+            return `
+              <div class="compact-song-row ${isRowPlaying ? 'is-playing' : ''}" data-track-id="${track.id}" data-genre="${track.genre || 'Music'}">
+                <div class="compact-thumb-wrap">
+                  <img src="${cover}" alt="Cover" class="compact-thumb-img" onerror="this.src='https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80'">
+                  <div class="compact-thumb-play">▶</div>
+                </div>
+                <div class="compact-song-info">
+                  <span class="compact-song-title">${escapeHtml(track.title)}</span>
+                  <div class="compact-sub-row">
+                    <span class="compact-song-artist">${escapeHtml(track.artist)}</span>
+                    <span class="compact-bpm-tag">${rowBpm}</span>
+                  </div>
+                </div>
+                <div class="compact-meta-right">
+                  <div class="mini-eq-bars">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                  <span class="compact-song-duration">${dur}</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- Bottom Section: Related Creators & Variations -->
+    ${relatedResults.length > 0 ? `
+      <div class="related-creators-section">
+        <h3 class="results-column-title">Related Tracks & Creators</h3>
+        <div class="creators-carousel-row">
+          ${relatedResults.map(r => `
+            <div class="creator-card" data-track-id="${r.id}" data-genre="${r.genre || 'Music'}">
+              <img src="${r.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80'}" alt="${escapeHtml(r.artist)}" class="creator-avatar-img">
+              <span class="creator-name">${escapeHtml(r.artist)}</span>
+              <span class="creator-badge">${escapeHtml(r.durationStr || 'Song')}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  // Attach Click & 3D Particle Mood Listeners
+  attachAllTrackListeners(container, results);
+}
+
+function getBpmTag(track) {
+  const g = (track.genre || track.title || '').toLowerCase();
+  if (g.includes('phonk') || g.includes('drift')) return '🔥 140 BPM';
+  if (g.includes('synth') || g.includes('cyber') || g.includes('retro')) return '⚡ 124 BPM';
+  if (g.includes('lofi') || g.includes('lo-fi') || g.includes('chill')) return '🌊 84 BPM';
+  if (g.includes('ambient') || g.includes('space') || g.includes('drone')) return '🪐 60 BPM';
+  return '⚡ 120 BPM';
+}
+
+function attachAllTrackListeners(container, tracksList) {
+  // Top Result Card
+  const heroCard = container.querySelector('.top-result-hero-card');
+  if (heroCard) {
+    attachHoverMoodListener(heroCard, heroCard.dataset.genre);
+    heroCard.addEventListener('click', () => {
+      const trackId = heroCard.dataset.trackId;
+      const track = tracksList.find(t => t.id === trackId);
+      if (track) {
+        addRecentSearch(track);
+        playStream(track);
+        closeSpotlightModal();
+      }
+    });
+  }
+
+  // Compact Song Rows
+  container.querySelectorAll('.compact-song-row').forEach(row => {
+    attachHoverMoodListener(row, row.dataset.genre);
+    row.addEventListener('click', () => {
+      const trackId = row.dataset.trackId;
+      const track = tracksList.find(t => t.id === trackId);
+      if (track) {
+        addRecentSearch(track);
+        playStream(track);
+        closeSpotlightModal();
+      }
+    });
+  });
+
+  // Related Creators / Variation Cards
+  container.querySelectorAll('.related-creators-section .creator-card').forEach(card => {
+    attachHoverMoodListener(card, card.dataset.genre);
+    card.addEventListener('click', () => {
+      const trackId = card.dataset.trackId;
+      const track = tracksList.find(t => t.id === trackId);
+      if (track) {
+        addRecentSearch(track);
+        playStream(track);
+        closeSpotlightModal();
+      }
+    });
   });
 }
 
-// ============================================================================
-// 8. Robust Multi-File Audio Upload & Drag-and-Drop
-// ============================================================================
+function attachHoverMoodListener(element, genre) {
+  const g = (genre || '').toLowerCase();
+  let mood = { colorA: [0.0, 0.94, 0.9], colorB: [0.7, 0.1, 0.9] }; // Cyan/Purple
 
-function extractAudioFileMetadata(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const buffer = e.target.result;
-      const view = new DataView(buffer);
-      
-      let rawName = file.name.replace(/\.[^/.]+$/, "");
-      let meta = {
-        title: rawName,
-        artist: "Uploaded Artist",
-        language: "Audio File",
-        genre: "Electronic / Pop"
-      };
+  if (g.includes('synth') || g.includes('cyber')) {
+    mood = { colorA: [0.02, 0.94, 1.0], colorB: [0.95, 0.25, 0.6] }; // Neon Cyan & Magenta
+  } else if (g.includes('lofi') || g.includes('lo-fi') || g.includes('chill')) {
+    mood = { colorA: [0.95, 0.6, 0.2], colorB: [0.4, 0.2, 0.8] }; // Sunset Gold & Violet
+  } else if (g.includes('phonk') || g.includes('drift') || g.includes('bass')) {
+    mood = { colorA: [0.9, 0.1, 0.3], colorB: [0.15, 0.1, 0.35] }; // Crimson & Night Shadow
+  } else if (g.includes('ambient') || g.includes('space') || g.includes('drone')) {
+    mood = { colorA: [0.1, 0.4, 0.95], colorB: [0.1, 0.85, 0.65] }; // Deep Blue & Mint
+  }
 
-      try {
-        // ID3v2 Header Check
-        if (view.getUint8(0) === 0x49 && view.getUint8(1) === 0x44 && view.getUint8(2) === 0x33) {
-          const id3Version = view.getUint8(3);
-          const tagSize = (
-            ((view.getUint8(6) & 0x7F) << 21) |
-            ((view.getUint8(7) & 0x7F) << 14) |
-            ((view.getUint8(8) & 0x7F) << 7) |
-            (view.getUint8(9) & 0x7F)
-          );
+  element.addEventListener('mouseenter', () => {
+    state.hoverMood = mood;
+  });
 
-          let offset = 10;
-          const maxOffset = Math.min(buffer.byteLength, 10 + tagSize);
+  element.addEventListener('mouseleave', () => {
+    state.hoverMood = null;
+  });
+}
 
-          while (offset < maxOffset - 10) {
-            let frameID = "";
-            for (let i = 0; i < 4; i++) {
-              frameID += String.fromCharCode(view.getUint8(offset + i));
-            }
+function closeSpotlightModal() {
+  state.spotlightOpen = false;
+  state.hoverMood = null;
+  const modal = document.getElementById('spotlight-modal');
+  if (modal) {
+    modal.classList.remove('visible');
+    setTimeout(() => { modal.style.display = 'none'; }, 200);
+  }
+}
 
-            if (!/^[A-Z0-9]{4}$/.test(frameID)) break;
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, function(m) {
+    return {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    }[m];
+  });
+}
 
-            let frameSize = 0;
-            if (id3Version === 4) {
-              frameSize = (
-                ((view.getUint8(offset + 4) & 0x7F) << 21) |
-                ((view.getUint8(offset + 5) & 0x7F) << 14) |
-                ((view.getUint8(offset + 6) & 0x7F) << 7) |
-                (view.getUint8(offset + 7) & 0x7F)
-              );
-            } else {
-              frameSize = view.getUint32(offset + 4);
-            }
+// ----------------------------------------------------------------------------
+// 3. Refined Bottom Player Dock Controls
+// ----------------------------------------------------------------------------
 
-            if (frameSize <= 0 || offset + 10 + frameSize > maxOffset) break;
+function setupDockControls() {
+  const playBtn = document.getElementById('play-toggle');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const seekBackBtn = document.getElementById('seek-back-btn');
+  const seekForwardBtn = document.getElementById('seek-forward-btn');
+  const volumeSlider = document.getElementById('volume-slider');
+  const volumeBtn = document.getElementById('volume-btn');
+  const sourceSelect = document.getElementById('audio-source');
+  const geometrySelect = document.getElementById('geometry-mode');
+  const zenBtn = document.getElementById('zen-mode-btn');
+  const fullscreenBtn = document.getElementById('fullscreen-btn');
 
-            const frameData = new Uint8Array(buffer, offset + 10, frameSize);
-            const encoding = frameData[0];
-            let text = "";
+  if (playBtn) playBtn.addEventListener('click', togglePlayPause);
 
-            if (encoding === 1 || encoding === 2) {
-              const u16 = new Uint16Array(buffer, offset + 11, Math.floor((frameSize - 1) / 2));
-              text = String.fromCharCode.apply(null, Array.from(u16)).replace(/\0/g, '');
-            } else {
-              const bytes = frameData.slice(1);
-              text = new TextDecoder('utf-8').decode(bytes).replace(/\0/g, '');
-            }
-
-            text = text.trim();
-            if (text.length > 0) {
-              if (frameID === 'TIT2') meta.title = text;
-              else if (frameID === 'TPE1' || frameID === 'TPE2') meta.artist = text;
-              else if (frameID === 'TLAN') meta.language = text.toUpperCase();
-              else if (frameID === 'TCON') meta.genre = text;
-            }
-
-            offset += 10 + frameSize;
-          }
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (state.audioSourceType === 'youtube') {
+        state.youtubeCurrentTime = 0;
+        updateTimelineUI();
+        if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.seekYouTube === 'function') {
+          window.electronAPI.seekYouTube(0).catch(() => {});
         }
-      } catch (err) {
-        console.warn("ID3 parse note:", err);
+      } else if (state.audioSourceType === 'playlist' && Array.isArray(state.playlist) && state.playlist.length > 0) {
+        const nextIdx = state.currentTrackIndex > 0 ? state.currentTrackIndex - 1 : state.playlist.length - 1;
+        playUploadedTrack(nextIdx);
+      } else if (state.masterAudioElement) {
+        state.masterAudioElement.currentTime = 0;
       }
+    });
+  }
 
-      // Smart Filename Heuristic
-      if (meta.artist === "Uploaded Artist" && rawName.includes("-")) {
-        const parts = rawName.split("-").map(p => p.trim());
-        if (parts.length >= 2) {
-          meta.artist = parts[0];
-          meta.title = parts.slice(1).join(" - ");
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      if (state.audioSourceType === 'playlist' && Array.isArray(state.playlist) && state.playlist.length > 0) {
+        const nextIdx = (state.currentTrackIndex + 1) % state.playlist.length;
+        playUploadedTrack(nextIdx);
+      }
+    });
+  }
+
+  if (seekBackBtn) {
+    seekBackBtn.addEventListener('click', () => {
+      if (state.audioSourceType === 'youtube') {
+        const newTime = Math.max(0, (state.youtubeCurrentTime || 0) - 10);
+        state.youtubeCurrentTime = newTime;
+        updateTimelineUI();
+        if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.seekYouTube === 'function') {
+          window.electronAPI.seekYouTube(newTime).catch(() => {});
+        }
+      } else if (state.masterAudioElement) {
+        state.masterAudioElement.currentTime = Math.max(0, state.masterAudioElement.currentTime - 10);
+      }
+    });
+  }
+
+  if (seekForwardBtn) {
+    seekForwardBtn.addEventListener('click', () => {
+      if (state.audioSourceType === 'youtube') {
+        const duration = state.youtubeDuration || state.trackMeta?.duration || 210;
+        const newTime = Math.min(duration, (state.youtubeCurrentTime || 0) + 10);
+        state.youtubeCurrentTime = newTime;
+        updateTimelineUI();
+        if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.seekYouTube === 'function') {
+          window.electronAPI.seekYouTube(newTime).catch(() => {});
+        }
+      } else if (state.masterAudioElement) {
+        state.masterAudioElement.currentTime += 10;
+      }
+    });
+  }
+
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      state.currentVolume = val;
+      state.isMuted = val === 0;
+      if (state.masterAudioElement) state.masterAudioElement.volume = val;
+      if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.setYouTubeVolume === 'function') {
+        window.electronAPI.setYouTubeVolume(state.isMuted ? 0 : val);
+      }
+      if (volumeBtn) volumeBtn.innerHTML = val === 0 ? '🔇' : (val < 0.5 ? '🔉' : '🔊');
+    });
+  }
+
+  if (volumeBtn) {
+    volumeBtn.addEventListener('click', () => {
+      state.isMuted = !state.isMuted;
+      const targetVol = state.isMuted ? 0 : state.currentVolume;
+      if (state.masterAudioElement) state.masterAudioElement.volume = targetVol;
+      if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.setYouTubeVolume === 'function') {
+        window.electronAPI.setYouTubeVolume(targetVol);
+      }
+      volumeBtn.innerHTML = state.isMuted ? '🔇' : (state.currentVolume < 0.5 ? '🔉' : '🔊');
+      if (volumeSlider) volumeSlider.value = targetVol;
+    });
+  }
+
+  if (sourceSelect) {
+    sourceSelect.addEventListener('change', (e) => {
+      const src = e.target.value;
+      if (src === 'stream') {
+        playStream(CURATED_STATIONS[0]);
+      } else if (src === 'synth') {
+        startSynthEngine(state.selectedPreset || 'cyberpunk');
+      } else if (src === 'mic') {
+        startLiveMic();
+      } else if (src === 'playlist') {
+        if (Array.isArray(state.playlist) && state.playlist.length > 0) {
+          playUploadedTrack(0);
+        } else {
+          triggerLocalFilePicker();
         }
       }
-
-      resolve(meta);
-    };
-
-    reader.readAsArrayBuffer(file.slice(0, 131072)); // Read initial 128KB for ID3 tags
-  });
-}
-
-async function handleFiles(fileList) {
-  if (!fileList || fileList.length === 0) return;
-  initAudio();
-
-  const startIndex = state.playlist.length;
-
-  for (let i = 0; i < fileList.length; i++) {
-    const file = fileList[i];
-    if (!file.type.startsWith('audio/') && !/\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(file.name)) {
-      continue;
-    }
-
-    const meta = await extractAudioFileMetadata(file);
-    const url = URL.createObjectURL(file);
-
-    // Create temporary element to measure duration
-    const tempAudio = new Audio(url);
-    const duration = await new Promise(res => {
-      tempAudio.addEventListener('loadedmetadata', () => res(tempAudio.duration));
-      tempAudio.addEventListener('error', () => res(200));
-      setTimeout(() => res(200), 1000);
-    });
-
-    state.playlist.push({
-      id: 'upload_' + Date.now() + '_' + i,
-      title: meta.title,
-      artist: meta.artist,
-      language: meta.language,
-      genre: meta.genre,
-      duration: duration || 200,
-      type: 'file',
-      file: file,
-      url: url
     });
   }
 
-  renderPlaylistDrawer();
+  if (geometrySelect) {
+    geometrySelect.addEventListener('change', (e) => {
+      state.currentGeometryMode = e.target.value;
+    });
+  }
 
-  // Play the newly added track immediately
-  if (state.playlist.length > startIndex) {
-    playTrack(startIndex);
+  if (zenBtn) {
+    zenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleZenMode();
+    });
+  }
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+  }
+
+  // Timeline Click / Scrubbing
+  const timeline = document.getElementById('timeline-container');
+  if (timeline) {
+    timeline.addEventListener('click', (e) => {
+      const rect = timeline.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      
+      if (state.audioSourceType === 'youtube') {
+        const duration = state.youtubeDuration || state.trackMeta?.duration || 210;
+        const seekSeconds = duration * clickRatio;
+        state.youtubeCurrentTime = seekSeconds;
+        updateTimelineUI();
+        if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.seekYouTube === 'function') {
+          window.electronAPI.seekYouTube(seekSeconds).catch(() => {});
+        }
+      } else if (state.masterAudioElement && state.masterAudioElement.duration) {
+        state.masterAudioElement.currentTime = state.masterAudioElement.duration * clickRatio;
+      }
+    });
   }
 }
 
-// Upload Buttons
-const uploadBtn = document.getElementById('upload-btn');
-const drawerAddBtn = document.getElementById('drawer-add-btn');
-const fileInput = document.getElementById('file-input');
+// ----------------------------------------------------------------------------
+// 4. Live Audio-Reactive Waveform Scrubber Canvas
+// ----------------------------------------------------------------------------
 
-if (uploadBtn) {
-  uploadBtn.addEventListener('click', () => {
-    if (fileInput) {
-      fileInput.value = ''; // Reset input to allow selecting same file again
-      fileInput.click();
-    }
-  });
-}
+function startWaveformRenderer() {
+  const canvas = document.getElementById('waveform-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
 
-if (drawerAddBtn) {
-  drawerAddBtn.addEventListener('click', () => {
-    if (fileInput) {
-      fileInput.value = '';
-      fileInput.click();
-    }
-  });
-}
+  function renderWaveform() {
+    requestAnimationFrame(renderWaveform);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-if (fileInput) {
-  fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-  });
-}
+    const barCount = 48;
+    const barWidth = 4;
+    const gap = (canvas.width - barCount * barWidth) / (barCount - 1);
 
-// Audio Source Dropdown
-const audioSourceSelect = document.getElementById('audio-source');
-if (audioSourceSelect) {
-  audioSourceSelect.addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (val === 'synth') {
-      state.audioSourceType = 'synth';
-      if (state.isPlaying) {
-        startSynthEngine(state.selectedPreset);
+    for (let i = 0; i < barCount; i++) {
+      let val = 0.15;
+      if (state.isPlaying && state.dataArray) {
+        const freqIdx = Math.floor((i / barCount) * (state.dataArray.length / 2));
+        val = state.dataArray[freqIdx] / 255;
       }
-    } else if (val === 'playlist') {
-      let targetIdx = state.currentTrackIndex;
-      if (!state.playlist[targetIdx] || state.playlist[targetIdx].type !== 'file') {
-        targetIdx = state.playlist.findIndex(t => t.type === 'file');
-      }
-      if (targetIdx !== -1) {
-        state.audioSourceType = 'playlist';
-        playTrack(targetIdx);
+
+      const barHeight = Math.max(3, val * canvas.height * 0.85);
+      const x = i * (barWidth + gap);
+      const y = (canvas.height - barHeight) / 2;
+
+      const r = Math.floor(0 + val * 180);
+      const g = Math.floor(240 - val * 60);
+      const b = Math.floor(220 + val * 35);
+
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.5 + val * 0.5})`;
+      ctx.beginPath();
+      ctx.roundRect(x, y, barWidth, barHeight, 3);
+      ctx.fill();
+    }
+  }
+
+  renderWaveform();
+}
+
+// ----------------------------------------------------------------------------
+// 5. Keyboard Shortcuts & Zen Mode
+// ----------------------------------------------------------------------------
+
+function setupShortcuts() {
+  window.addEventListener('keydown', (e) => {
+    // Open Spotlight on Ctrl+K or Cmd+K
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      const modal = document.getElementById('spotlight-modal');
+      const searchInput = document.getElementById('spotlight-input');
+      if (modal && modal.style.display !== 'flex') {
+        state.spotlightOpen = true;
+        modal.style.display = 'flex';
+        setTimeout(() => {
+          modal.classList.add('visible');
+          if (searchInput) searchInput.focus();
+        }, 10);
       } else {
-        alert('Please add songs to the playlist first by clicking "Upload Songs" or dragging files onto the screen.');
-        audioSourceSelect.value = state.audioSourceType;
+        closeSpotlightModal();
       }
-    } else if (val === 'mic') {
-      startMicInput();
+      return;
+    }
+
+    // Close Spotlight on Escape
+    if (e.key === 'Escape') {
+      closeSpotlightModal();
+      return;
+    }
+
+    // Escape key handling
+    if (e.key === 'Escape') {
+      if (state.zenMode) {
+        e.preventDefault();
+        toggleZenMode();
+        return;
+      }
+      if (state.spotlightOpen) {
+        const modal = document.getElementById('spotlight-modal');
+        if (modal) {
+          state.spotlightOpen = false;
+          modal.classList.remove('visible');
+          setTimeout(() => modal.style.display = 'none', 200);
+        }
+        return;
+      }
+    }
+
+    // Ignore other shortcuts when typing in inputs
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      togglePlayPause();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      toggleZenMode();
+    } else if (e.key.toLowerCase() === 'f') {
+      toggleFullscreen();
+    } else if (e.key.toLowerCase() === 'm') {
+      const volumeBtn = document.getElementById('volume-btn');
+      if (volumeBtn) volumeBtn.click();
     }
   });
-}
 
-// Global Drag & Drop Listeners
-const dragOverlay = document.getElementById('drag-drop-overlay');
-
-window.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
-    if (dragOverlay) dragOverlay.classList.add('active');
-  }
-});
-
-window.addEventListener('dragleave', (e) => {
-  if (e.clientX === 0 && e.clientY === 0 && dragOverlay) {
-    dragOverlay.classList.remove('active');
-  }
-});
-
-window.addEventListener('drop', (e) => {
-  e.preventDefault();
-  if (dragOverlay) dragOverlay.classList.remove('active');
-  if (e.dataTransfer && e.dataTransfer.files) {
-    handleFiles(e.dataTransfer.files);
-  }
-});
-
-// ============================================================================
-// 9. Attach Transport & Media Button Events
-// ============================================================================
-
-const playToggleBtn = document.getElementById('play-toggle');
-if (playToggleBtn) playToggleBtn.addEventListener('click', togglePlayPause);
-
-const prevBtn = document.getElementById('prev-btn');
-if (prevBtn) prevBtn.addEventListener('click', prevTrack);
-
-const nextBtn = document.getElementById('next-btn');
-if (nextBtn) nextBtn.addEventListener('click', nextTrack);
-
-const seekBackBtn = document.getElementById('seek-back-btn');
-if (seekBackBtn) seekBackBtn.addEventListener('click', () => seekRelative(-10));
-
-const seekForwardBtn = document.getElementById('seek-forward-btn');
-if (seekForwardBtn) seekForwardBtn.addEventListener('click', () => seekRelative(10));
-
-const synthPresetSelect = document.getElementById('synth-preset');
-if (synthPresetSelect) {
-  synthPresetSelect.addEventListener('change', (e) => {
-    state.selectedPreset = e.target.value;
-    if (state.audioSourceType === 'synth' && state.isPlaying) {
-      startSynthEngine(state.selectedPreset);
-    }
-  });
-}
-
-const geometryModeSelect = document.getElementById('geometry-mode');
-if (geometryModeSelect) {
-  geometryModeSelect.addEventListener('change', (e) => {
-    state.currentGeometryMode = e.target.value;
-  });
-}
-
-// Keyboard Shortcuts (Space: Play/Pause, Arrow Left/Right: Seek ±10s, Arrow Up/Down: Volume)
-window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-  if (e.code === 'Space') {
-    e.preventDefault();
-    togglePlayPause();
-  } else if (e.code === 'ArrowRight') {
-    e.preventDefault();
-    seekRelative(10);
-  } else if (e.code === 'ArrowLeft') {
-    e.preventDefault();
-    seekRelative(-10);
-  }
-});
-
-function startMicInput() {
-  initAudio();
-  state.audioSourceType = 'mic';
-  if (state.synthTimer) clearInterval(state.synthTimer);
-  if (state.masterAudioElement) state.masterAudioElement.pause();
-
-  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    .then(stream => {
-      const micSource = state.audioCtx.createMediaStreamSource(stream);
-      micSource.connect(state.analyser);
-      state.isPlaying = true;
-      updatePlayButtonUI(true);
-    })
-    .catch(err => {
-      alert('Microphone access note: ' + err.message);
+  // Click on background WebGL canvas during Zen Mode to exit
+  const canvasContainer = document.getElementById('canvas-container');
+  if (canvasContainer) {
+    canvasContainer.addEventListener('click', () => {
+      if (state.zenMode) {
+        toggleZenMode();
+      }
     });
+  }
 }
 
-// ============================================================================
-// 11. AI Theme Modal Generator & Video Recording
-// ============================================================================
 
-const vibeModal = document.getElementById('vibe-modal');
-const aiThemeBtn = document.getElementById('ai-theme-btn');
-const closeModalBtn = document.getElementById('close-modal');
-const generateThemeBtn = document.getElementById('generate-theme-btn');
-const moodInput = document.getElementById('mood-input');
+// ----------------------------------------------------------------------------
+// Zen Mode Controller
+// ----------------------------------------------------------------------------
 
-if (aiThemeBtn) {
-  aiThemeBtn.addEventListener('click', () => {
-    if (vibeModal) vibeModal.classList.add('open');
-  });
+export function toggleZenMode(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  state.zenMode = !state.zenMode;
+  if (window.sendRemoteLog) window.sendRemoteLog('EXECUTED_toggleZenMode', { zenMode: state.zenMode });
+  const hudRoot = document.getElementById('hud-root');
+  const exitPill = document.getElementById('zen-exit-pill');
+
+  if (hudRoot) {
+    if (state.zenMode) {
+      hudRoot.classList.add('zen-active');
+      if (exitPill) {
+        exitPill.style.display = 'flex';
+        exitPill.style.opacity = '1';
+      }
+    } else {
+      hudRoot.classList.remove('zen-active');
+      if (exitPill) exitPill.style.display = 'none';
+    }
+  }
 }
+window.toggleZenMode = toggleZenMode;
+window.__toggleZenMode = toggleZenMode;
 
-if (closeModalBtn) {
-  closeModalBtn.addEventListener('click', () => {
-    if (vibeModal) vibeModal.classList.remove('open');
-  });
+export function toggleFullscreen(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(console.warn);
+  } else {
+    document.exitFullscreen().catch(console.warn);
+  }
 }
+window.toggleFullscreen = toggleFullscreen;
 
-if (generateThemeBtn) {
-  generateThemeBtn.addEventListener('click', async () => {
-    const promptText = moodInput ? moodInput.value.trim() : "Cyberpunk Neon Overdrive";
-    generateThemeBtn.textContent = "✨ Generating AI Vibe...";
-    generateThemeBtn.disabled = true;
+window.__toggleFullscreen = toggleFullscreen;
 
+
+// ----------------------------------------------------------------------------
+// 6. Local File Drag & Drop
+// ----------------------------------------------------------------------------
+
+export async function triggerLocalFilePicker() {
+  initAudio();
+  if (!Array.isArray(state.playlist)) state.playlist = [];
+
+  // 1. Native Electron Dialog
+  if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.selectAudioFiles === 'function') {
     try {
-      const requestPayload = { genre_or_mood: promptText, song_title: state.playlist[state.currentTrackIndex]?.title || "AuraWave Track" };
-      let data;
-      
-      if (window.electronAPI) {
-        data = await window.electronAPI.generateVibeTheme(requestPayload);
-      } else {
-        throw new Error("Electron API not available (running outside Electron)");
+      const files = await window.electronAPI.selectAudioFiles();
+      if (Array.isArray(files) && files.length > 0) {
+        const startIndex = state.playlist.length;
+        files.forEach(f => {
+          const audioUrl = f.streamUrl || f.dataUrl;
+          state.playlist.push({
+            id: `local-${Date.now()}-${Math.random()}`,
+            title: f.title || f.name,
+            artist: f.artist || 'Local Audio Track',
+            genre: f.genre || 'Local File',
+            cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&auto=format&fit=crop&q=80',
+            streamUrl: audioUrl,
+            url: audioUrl,
+            isLive: false
+          });
+        });
+        playUploadedTrack(startIndex);
+        const audioSourceSelect = document.getElementById('audio-source');
+        if (audioSourceSelect) audioSourceSelect.value = 'playlist';
+        return;
       }
-
-      applyAITheme(data);
-      if (vibeModal) vibeModal.classList.remove('open');
     } catch (err) {
-      console.warn("AI theme fetch error, applying local theme:", err);
-      applyAITheme({
-        theme_name: `Neon ${promptText}`,
-        primary_color: '#06b6d4',
-        secondary_color: '#ec4899',
-        particle_speed: 1.5,
-        wave_intensity: 2.0,
-        viral_tagline: "Feel the Music in 3D",
-        poetic_vibe: "Dynamic frequencies reshape the virtual horizon in real time."
-      });
-      if (vibeModal) vibeModal.classList.remove('open');
-    } finally {
-      generateThemeBtn.textContent = "Generate Vibe & Theme";
-      generateThemeBtn.disabled = false;
+      console.warn("Native file picker notice:", err);
     }
-  });
+  }
+
+  // 2. Fallback DOM file input
+  const fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    fileInput.value = '';
+    setTimeout(() => {
+      fileInput.click();
+    }, 50);
+  }
 }
 
-function applyAITheme(theme) {
+function setupDragAndDrop() {
+  const dropOverlay = document.getElementById('drag-drop-overlay');
+  const fileInput = document.getElementById('file-input');
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (dropOverlay) dropOverlay.style.display = 'flex';
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    if (e.relatedTarget === null && dropOverlay) {
+      dropOverlay.style.display = 'none';
+    }
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (dropOverlay) dropOverlay.style.display = 'none';
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
+    if (files.length > 0) handleUploadedFiles(files);
+  });
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) handleUploadedFiles(files);
+    });
+  }
+}
+
+
+function handleUploadedFiles(files) {
+  initAudio();
+  if (!Array.isArray(state.playlist)) state.playlist = [];
+  files.forEach(file => {
+    const url = URL.createObjectURL(file);
+    state.playlist.push({
+      id: `local-${Date.now()}-${Math.random()}`,
+      title: file.name.replace(/\.[^/.]+$/, ""),
+      artist: 'Local File',
+      genre: 'Local Audio',
+      cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&auto=format&fit=crop&q=80',
+      url: url,
+      isLive: false
+    });
+  });
+
+  // Play first uploaded file immediately
+  playUploadedTrack(state.playlist.length - files.length);
+  const audioSourceSelect = document.getElementById('audio-source');
+  if (audioSourceSelect) audioSourceSelect.value = 'playlist';
+}
+
+// ----------------------------------------------------------------------------
+// 7. AI Vibe Atmosphere & Music Synthesizer
+// ----------------------------------------------------------------------------
+
+export function openVibeModal(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  if (window.sendRemoteLog) window.sendRemoteLog('EXECUTED_openVibeModal', {});
+  const modal = document.getElementById('vibe-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    setTimeout(() => {
+      modal.classList.add('visible');
+    }, 10);
+  }
+}
+window.openVibeModal = openVibeModal;
+window.__openVibeModal = openVibeModal;
+
+export function closeVibeModal(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const modal = document.getElementById('vibe-modal');
+  if (modal) {
+    modal.classList.remove('visible');
+    setTimeout(() => {
+      modal.style.display = 'none';
+    }, 200);
+  }
+}
+window.closeVibeModal = closeVibeModal;
+window.__closeVibeModal = closeVibeModal;
+
+
+
+
+export async function generateAIVibe(specificMood, e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const moodInput = document.getElementById('mood-input');
+  const mood = specificMood || (moodInput ? moodInput.value.trim() : '') || 'Cyberpunk Neon Highway';
+  if (moodInput) moodInput.value = mood;
+
   const vibeTag = document.getElementById('vibe-tag');
   const viralTagline = document.getElementById('viral-tagline');
-  const vibeDesc = document.getElementById('vibe-description');
+  const vibeDescription = document.getElementById('vibe-description');
 
-  if (vibeTag && theme.theme_name) vibeTag.textContent = theme.theme_name;
-  if (viralTagline && theme.viral_tagline) viralTagline.textContent = theme.viral_tagline;
-  if (vibeDesc && theme.poetic_vibe) vibeDesc.textContent = theme.poetic_vibe;
+  // 1. Detect Scene Intent or Derive Colors
+  const scene = detectSceneIntent(mood);
+  let moodColors = { colorA: [0.0, 0.94, 0.9], colorB: [0.7, 0.1, 0.9] };
+  let searchQuery = mood;
 
-  if (theme.particle_speed) state.themeSpeed = theme.particle_speed;
-  if (theme.wave_intensity) state.themeWaveIntensity = theme.wave_intensity;
-
-  if (theme.primary_color && theme.secondary_color) {
-    const c1 = new THREE.Color(theme.primary_color);
-    const c2 = new THREE.Color(theme.secondary_color);
-
-    const colArr = geometry.attributes.color.array;
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      const i3 = i * 3;
-      const ratio = (i % GRID_SIZE) / GRID_SIZE;
-      const blended = c1.clone().lerp(c2, ratio);
-      colArr[i3] = blended.r;
-      colArr[i3 + 1] = blended.g;
-      colArr[i3 + 2] = blended.b;
-    }
-    geometry.attributes.color.needsUpdate = true;
-    pointLight1.color.set(theme.primary_color);
-    pointLight2.color.set(theme.secondary_color);
+  if (scene) {
+    moodColors = scene.mood;
+    searchQuery = scene.vibePrompt;
+  } else if (mood.toLowerCase().includes('sunset') || mood.toLowerCase().includes('lofi') || mood.toLowerCase().includes('chill')) {
+    moodColors = { colorA: [0.95, 0.6, 0.2], colorB: [0.4, 0.2, 0.8] };
+  } else if (mood.toLowerCase().includes('ambient') || mood.toLowerCase().includes('space')) {
+    moodColors = { colorA: [0.1, 0.4, 0.95], colorB: [0.1, 0.85, 0.65] };
+  } else if (mood.toLowerCase().includes('phonk') || mood.toLowerCase().includes('drift')) {
+    moodColors = { colorA: [0.9, 0.1, 0.3], colorB: [0.15, 0.1, 0.35] };
   }
-}
 
-// Video Recording Module
-let mediaRecorder = null;
-let recordedChunks = [];
-let isRecording = false;
+  // Apply 3D Particle Theme
+  state.hoverMood = moodColors;
 
-const recordBtn = document.getElementById('record-btn');
-const recordText = document.getElementById('record-text');
+  // Update Center HUD Display
+  if (vibeTag) vibeTag.textContent = `AI VIBE • ${mood.toUpperCase()}`;
+  if (viralTagline) viralTagline.textContent = `AuraWave • ${mood}`;
+  if (vibeDescription) vibeDescription.textContent = `Atmosphere Synthesized • Live Stream Active`;
 
-if (recordBtn) {
-  recordBtn.addEventListener('click', () => {
-    if (!isRecording) {
-      startRecording();
-    } else {
-      stopRecording();
+  // Close Modal
+  closeVibeModal();
+
+  // 2. Immediate audio feedback with curated station
+  let immediateStation = CURATED_STATIONS[0];
+  if (mood.toLowerCase().includes('sunset') || mood.toLowerCase().includes('lofi') || mood.toLowerCase().includes('chill') || mood.toLowerCase().includes('cafe')) {
+    immediateStation = CURATED_STATIONS[1];
+  } else if (mood.toLowerCase().includes('phonk') || mood.toLowerCase().includes('drift') || mood.toLowerCase().includes('gym')) {
+    immediateStation = CURATED_STATIONS[2];
+  } else if (mood.toLowerCase().includes('space') || mood.toLowerCase().includes('orbit') || mood.toLowerCase().includes('ambient')) {
+    immediateStation = CURATED_STATIONS[3];
+  }
+  playStream(immediateStation);
+
+  // 3. Search and stream high-match song
+  searchGlobalMusic(searchQuery).then(results => {
+    if (results && results.length > 0) {
+      const trackToPlay = results[0];
+      addRecentSearch(trackToPlay);
+      playStream(trackToPlay);
     }
+  }).catch(err => {
+    console.warn("AI Vibe stream launch notice:", err);
+  });
+}
+window.generateAIVibe = generateAIVibe;
+window.__generateAIVibe = generateAIVibe;
+
+
+function setupVibeModal() {
+  const vibeBtn = document.getElementById('ai-vibe-btn');
+  if (vibeBtn) {
+    vibeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openVibeModal(e);
+    });
+  }
+
+  const closeBtn = document.getElementById('close-modal');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeVibeModal(e);
+    });
+  }
+
+  const modal = document.getElementById('vibe-modal');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeVibeModal(e);
+      }
+    });
+  }
+
+  const modalBox = document.getElementById('vibe-modal-box');
+  if (modalBox) {
+    modalBox.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  const generateBtn = document.getElementById('generate-theme-btn');
+  if (generateBtn) {
+    generateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      generateAIVibe(null, e);
+    });
+  }
+
+  // Quick Vibe Chips
+  document.querySelectorAll('.vibe-chip').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vibe = chip.dataset.vibe;
+      generateAIVibe(vibe, e);
+    });
   });
 }
 
-function startRecording() {
-  initAudio();
-  recordedChunks = [];
-  const stream = renderer.domElement.captureStream(60);
-
-  try {
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
-  } catch (e) {
-    mediaRecorder = new MediaRecorder(stream);
-  }
-
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) recordedChunks.push(e.data);
-  };
-
-  mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `AuraWave_Visualizer_${Date.now()}.webm`;
-    a.click();
-    if (recordText) recordText.textContent = "Record Clip";
-    if (recordBtn) recordBtn.classList.remove('primary');
-  };
-
-  mediaRecorder.start();
-  isRecording = true;
-  if (recordText) recordText.textContent = "Stop Recording (Rec 🔴)";
-  if (recordBtn) recordBtn.classList.add('primary');
+const zenExitBtn = document.getElementById('zen-exit-pill');
+if (zenExitBtn) {
+  zenExitBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleZenMode(e);
+  });
 }
 
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-    isRecording = false;
-  }
-}
 
-// Attach to window for global access between modules
-window.formatTime = formatTime;
-window.updatePlayButtonUI = updatePlayButtonUI;
-window.showTrackDetails = showTrackDetails;
-window.playTrack = playTrack;
-window.togglePlayPause = togglePlayPause;
-window.nextTrack = nextTrack;
-window.prevTrack = prevTrack;
-window.seekRelative = seekRelative;
-window.handleTrackEnded = handleTrackEnded;
-window.updateTimeline = updateTimeline;
-window.setVolume = setVolume;
-window.toggleMute = toggleMute;
-window.updateVolumeUI = updateVolumeUI;
-window.togglePlaylistDrawer = togglePlaylistDrawer;
-window.renderPlaylistDrawer = renderPlaylistDrawer;
-window.removeTrack = removeTrack;
-window.extractAudioFileMetadata = extractAudioFileMetadata;
-window.handleFiles = handleFiles;
-window.startMicInput = startMicInput;
-window.applyAITheme = applyAITheme;
-window.startRecording = startRecording;
-window.stopRecording = stopRecording;
+
+

@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.4.0",
   "type": "module",
-  "main": "electron/main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build:web": "vite build",
@@ -19,6 +19,13 @@
       "output": "dist-electron",
       "buildResources": "build"
     },
+    "files": [
+      "dist/**/*",
+      "dist-electron/main.js",
+      "dist-electron/preload.js",
+      "dist-electron/preload.cjs",
+      "package.json"
+    ],
     "extraResources": [
       "payload.zip"
     ],
