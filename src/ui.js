@@ -11,6 +11,8 @@ import {
   updateDockTrackInfo,
   updateTimelineUI 
 } from './audio.js';
+import { auth } from './auth.js';
+import { sync } from './sync.js';
 
 // ============================================================================
 // Minimalist UI Controller & Live Global Music Discovery Engine
@@ -24,6 +26,7 @@ export function initUI() {
   setupShortcuts();
   setupDragAndDrop();
   setupVibeModal();
+  setupAuthAndProfileDrawer();
   startWaveformRenderer();
   
   // Initial track info sync
@@ -1290,6 +1293,395 @@ if (zenExitBtn) {
     toggleZenMode(e);
   });
 }
+
+// ----------------------------------------------------------------------------
+// 6. Consumer Auth, User Profile & Zero-Knowledge Vault UI Engine
+// ----------------------------------------------------------------------------
+
+function setupAuthAndProfileDrawer() {
+  // Top-nav Pill
+  const userProfileBtn = document.getElementById('user-profile-btn');
+  const userAvatarImg = document.getElementById('user-avatar-img');
+  const userDisplayName = document.getElementById('user-display-name');
+  const syncStatusIndicator = document.getElementById('sync-status-indicator');
+
+  // Auth Modal Elements
+  const authModal = document.getElementById('auth-modal');
+  const closeAuthModalBtn = document.getElementById('close-auth-modal');
+  const googleAuthBtn = document.getElementById('google-auth-btn');
+  const authTabSignin = document.getElementById('auth-tab-signin');
+  const authTabRegister = document.getElementById('auth-tab-register');
+  const authStatusMsg = document.getElementById('auth-status-msg');
+  const emailAuthForm = document.getElementById('email-auth-form');
+  const displayNameGroup = document.getElementById('display-name-group');
+  const authNameInput = document.getElementById('auth-name-input');
+  const authEmailInput = document.getElementById('auth-email-input');
+  const authPasswordInput = document.getElementById('auth-password-input');
+  const togglePwdVisibility = document.getElementById('toggle-pwd-visibility');
+  const authSubmitBtn = document.getElementById('auth-submit-btn');
+  const continueGuestBtn = document.getElementById('continue-guest-btn');
+  const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+
+  // Profile Drawer Elements
+  const profileDrawerBackdrop = document.getElementById('profile-drawer-backdrop');
+  const profileDrawer = document.getElementById('profile-drawer');
+  const closeProfileDrawerBtn = document.getElementById('close-profile-drawer-btn');
+  const drawerAvatarImg = document.getElementById('drawer-avatar-img');
+  const drawerUserName = document.getElementById('drawer-user-name');
+  const drawerUserEmail = document.getElementById('drawer-user-email');
+  const drawerSyncBadge = document.getElementById('drawer-sync-badge');
+  const vaultGeminiKeyInput = document.getElementById('vault-gemini-key-input');
+  const saveVaultKeyBtn = document.getElementById('save-vault-key-btn');
+  const vaultFeedbackMsg = document.getElementById('vault-feedback-msg');
+  const saveCurrentVibeBtn = document.getElementById('save-current-vibe-btn');
+  const drawerPresetsList = document.getElementById('drawer-presets-list');
+  const drawerAuthActionBtn = document.getElementById('drawer-auth-action-btn');
+  const drawerLogoutBtn = document.getElementById('drawer-logout-btn');
+
+  let activeAuthMode = 'signin'; // 'signin' | 'register'
+
+  function openAuthModal() {
+    state.authModalOpen = true;
+    if (window.sendRemoteLog) window.sendRemoteLog('OPEN_AUTH_MODAL', { activeAuthMode });
+    if (authModal) {
+      authModal.style.display = 'flex';
+      requestAnimationFrame(() => {
+        authModal.classList.add('visible');
+      });
+    }
+    clearAuthFeedback();
+  }
+
+  function closeAuthModal() {
+    state.authModalOpen = false;
+    if (window.sendRemoteLog) window.sendRemoteLog('CLOSE_AUTH_MODAL', {});
+    if (authModal) {
+      authModal.classList.remove('visible');
+      setTimeout(() => {
+        if (!state.authModalOpen) authModal.style.display = 'none';
+      }, 200);
+    }
+  }
+
+  function openProfileDrawer() {
+    state.profileDrawerOpen = true;
+    if (window.sendRemoteLog) window.sendRemoteLog('OPEN_PROFILE_DRAWER', { user: auth.getCurrentUser() });
+    if (profileDrawerBackdrop) {
+      profileDrawerBackdrop.style.display = 'flex';
+      requestAnimationFrame(() => {
+        profileDrawerBackdrop.classList.add('visible');
+      });
+    }
+    renderDrawerPresets();
+    loadDecryptedVaultKey();
+  }
+
+  function closeProfileDrawer() {
+    state.profileDrawerOpen = false;
+    if (window.sendRemoteLog) window.sendRemoteLog('CLOSE_PROFILE_DRAWER', {});
+    if (profileDrawerBackdrop) {
+      profileDrawerBackdrop.classList.remove('visible');
+      setTimeout(() => {
+        if (!state.profileDrawerOpen) profileDrawerBackdrop.style.display = 'none';
+      }, 200);
+    }
+  }
+
+  // Global window fallback triggers
+  window.__openAuthModal = openAuthModal;
+  window.__closeAuthModal = closeAuthModal;
+  window.__openProfileDrawer = openProfileDrawer;
+  window.__closeProfileDrawer = closeProfileDrawer;
+
+  function setAuthMode(mode) {
+    activeAuthMode = mode;
+    clearAuthFeedback();
+    if (mode === 'register') {
+      authTabRegister.classList.add('active');
+      authTabSignin.classList.remove('active');
+      displayNameGroup.style.display = 'flex';
+      authSubmitBtn.textContent = 'Create Account';
+    } else {
+      authTabSignin.classList.add('active');
+      authTabRegister.classList.remove('active');
+      displayNameGroup.style.display = 'none';
+      authSubmitBtn.textContent = 'Sign In';
+    }
+  }
+
+  function showAuthFeedback(msg, type = 'error') {
+    if (!authStatusMsg) return;
+    authStatusMsg.textContent = msg;
+    authStatusMsg.className = `auth-status-msg ${type}`;
+    authStatusMsg.style.display = 'block';
+  }
+
+  function clearAuthFeedback() {
+    if (!authStatusMsg) return;
+    authStatusMsg.textContent = '';
+    authStatusMsg.style.display = 'none';
+  }
+
+  async function loadDecryptedVaultKey() {
+    if (!vaultGeminiKeyInput) return;
+    try {
+      const key = await sync.getDecryptedApiKey();
+      if (key) {
+        vaultGeminiKeyInput.value = key;
+      }
+    } catch (e) {}
+  }
+
+  function renderDrawerPresets() {
+    if (!drawerPresetsList) return;
+    const presets = sync.getCustomPresets();
+    if (!presets || presets.length === 0) {
+      drawerPresetsList.innerHTML = '<p class="empty-list-text">No custom presets saved yet. Customize vibe & click "+ Save Current".</p>';
+      return;
+    }
+
+    drawerPresetsList.innerHTML = presets.map(p => `
+      <div class="preset-card-item" data-preset-id="${p.id}">
+        <div class="preset-meta-left">
+          <span class="preset-title">${p.name}</span>
+          <span class="preset-tag">${p.geometryMode.toUpperCase()} • ${p.moodTag}</span>
+        </div>
+        <button class="btn-micro apply-preset-btn" data-preset-id="${p.id}">Apply</button>
+      </div>
+    `).join('');
+
+    drawerPresetsList.querySelectorAll('.apply-preset-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.presetId;
+        const target = presets.find(p => p.id === id);
+        if (target) {
+          state.currentGeometryMode = target.geometryMode;
+          const geoSelect = document.getElementById('geometry-mode');
+          if (geoSelect) geoSelect.value = target.geometryMode;
+          const vibeTag = document.getElementById('vibe-tag');
+          if (vibeTag) vibeTag.textContent = target.moodTag;
+          closeProfileDrawer();
+        }
+      });
+    });
+  }
+
+  // Top Nav Profile Pill Action
+  if (userProfileBtn) {
+    userProfileBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const currentUser = auth.getCurrentUser();
+      if (currentUser && !currentUser.isGuest) {
+        openProfileDrawer();
+      } else {
+        openAuthModal();
+      }
+    });
+  }
+
+  // Auth Modal Listeners
+  if (closeAuthModalBtn) closeAuthModalBtn.addEventListener('click', closeAuthModal);
+  if (authModal) {
+    authModal.addEventListener('click', (e) => {
+      if (e.target === authModal) closeAuthModal();
+    });
+  }
+
+  if (authTabSignin) authTabSignin.addEventListener('click', () => setAuthMode('signin'));
+  if (authTabRegister) authTabRegister.addEventListener('click', () => setAuthMode('register'));
+
+  if (togglePwdVisibility && authPasswordInput) {
+    togglePwdVisibility.addEventListener('click', () => {
+      const isPwd = authPasswordInput.type === 'password';
+      authPasswordInput.type = isPwd ? 'text' : 'password';
+      togglePwdVisibility.textContent = isPwd ? '🙈' : '👁️';
+    });
+  }
+
+  const ONBOARDING_STORAGE_KEY = 'aurawave_onboarding_completed';
+
+  if (googleAuthBtn) {
+    googleAuthBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      clearAuthFeedback();
+      try {
+        await auth.loginWithGoogle();
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        showAuthFeedback('Signed in successfully with Google!', 'success');
+        setTimeout(closeAuthModal, 600);
+      } catch (err) {
+        showAuthFeedback(err.message || 'Google sign-in failed', 'error');
+      }
+    });
+  }
+
+  if (emailAuthForm) {
+    emailAuthForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAuthFeedback();
+      const email = authEmailInput.value;
+      const password = authPasswordInput.value;
+      const displayName = authNameInput.value;
+
+      try {
+        if (activeAuthMode === 'register') {
+          await auth.registerWithEmail(email, password, displayName);
+          showAuthFeedback('Account created successfully!', 'success');
+        } else {
+          await auth.loginWithEmail(email, password);
+          showAuthFeedback('Welcome back! Signed in.', 'success');
+        }
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        setTimeout(() => {
+          closeAuthModal();
+          authEmailInput.value = '';
+          authPasswordInput.value = '';
+          authNameInput.value = '';
+        }, 600);
+      } catch (err) {
+        showAuthFeedback(err.message || 'Authentication error', 'error');
+      }
+    });
+  }
+
+  if (continueGuestBtn) {
+    continueGuestBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+      auth.loginAsGuest();
+      closeAuthModal();
+    });
+  }
+
+  if (forgotPasswordBtn) {
+    forgotPasswordBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      showAuthFeedback('Password reset link would be sent to your email address.', 'success');
+    });
+  }
+
+  // Profile Drawer Listeners
+  if (closeProfileDrawerBtn) closeProfileDrawerBtn.addEventListener('click', closeProfileDrawer);
+  if (profileDrawerBackdrop) {
+    profileDrawerBackdrop.addEventListener('click', (e) => {
+      if (e.target === profileDrawerBackdrop) closeProfileDrawer();
+    });
+  }
+
+  if (saveVaultKeyBtn && vaultGeminiKeyInput) {
+    saveVaultKeyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const key = vaultGeminiKeyInput.value.trim();
+      if (!key) {
+        if (vaultFeedbackMsg) vaultFeedbackMsg.textContent = 'Please enter a valid key';
+        return;
+      }
+      try {
+        await sync.saveEncryptedApiKey(key);
+        if (vaultFeedbackMsg) {
+          vaultFeedbackMsg.textContent = '✓ Encrypted with AES-256 & saved locally!';
+          setTimeout(() => { vaultFeedbackMsg.textContent = ''; }, 3000);
+        }
+      } catch (err) {
+        if (vaultFeedbackMsg) vaultFeedbackMsg.textContent = 'Failed to save key';
+      }
+    });
+  }
+
+  if (saveCurrentVibeBtn) {
+    saveCurrentVibeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const name = prompt('Name your custom 3D vibe preset:', `${state.currentGeometryMode.toUpperCase()} Custom Vibe`);
+      if (!name) return;
+      try {
+        await sync.saveCustomPreset({
+          name: name,
+          geometryMode: state.currentGeometryMode,
+          themeSpeed: state.themeSpeed,
+          themeWaveIntensity: state.themeWaveIntensity,
+          moodTag: document.getElementById('vibe-tag')?.textContent || 'CUSTOM VIBE'
+        });
+        renderDrawerPresets();
+      } catch (err) {
+        alert('Failed to save preset');
+      }
+    });
+  }
+
+  if (drawerAuthActionBtn) {
+    drawerAuthActionBtn.addEventListener('click', () => {
+      closeProfileDrawer();
+      setTimeout(() => {
+        openAuthModal();
+      }, 250);
+    });
+  }
+
+  if (drawerLogoutBtn) {
+    drawerLogoutBtn.addEventListener('click', () => {
+      auth.logout();
+      closeProfileDrawer();
+      setTimeout(() => {
+        openAuthModal();
+      }, 250);
+    });
+  }
+
+  // First Launch Onboarding Check:
+  // Automatically show the Welcome Modal if the user is not signed in and hasn't dismissed it before
+  const hasCompletedOnboarding = localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
+  const initialUser = auth.getCurrentUser();
+  if ((!initialUser || initialUser.isGuest) && !hasCompletedOnboarding) {
+    setTimeout(() => {
+      openAuthModal();
+    }, 450);
+  }
+
+  // Sync Auth State to UI
+  auth.onAuthStateChanged((user) => {
+    if (!user || user.isGuest) {
+      if (userDisplayName) userDisplayName.textContent = 'Sign In';
+      if (userAvatarImg) userAvatarImg.src = 'https://api.dicebear.com/7.x/bottts/svg?seed=Guest';
+      if (drawerUserName) drawerUserName.textContent = 'Guest Explorer';
+      if (drawerUserEmail) drawerUserEmail.textContent = 'Not signed in (Local Session)';
+      if (drawerAvatarImg) drawerAvatarImg.src = 'https://api.dicebear.com/7.x/bottts/svg?seed=Guest';
+      if (drawerAuthActionBtn) drawerAuthActionBtn.textContent = 'Sign In / Create Account';
+      if (drawerLogoutBtn) drawerLogoutBtn.style.display = 'none';
+    } else {
+      const name = user.displayName || user.email.split('@')[0];
+      if (userDisplayName) userDisplayName.textContent = name;
+      const avatar = user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+      if (userAvatarImg) userAvatarImg.src = avatar;
+      if (drawerUserName) drawerUserName.textContent = name;
+      if (drawerUserEmail) drawerUserEmail.textContent = user.email;
+      if (drawerAvatarImg) drawerAvatarImg.src = avatar;
+      if (drawerAuthActionBtn) drawerAuthActionBtn.textContent = 'Switch Account';
+      if (drawerLogoutBtn) drawerLogoutBtn.style.display = 'block';
+    }
+  });
+
+  // Sync Status to Indicator Dot & Drawer Badge
+  sync.onSyncStatusChanged((status) => {
+    if (syncStatusIndicator) {
+      syncStatusIndicator.className = `sync-status-indicator ${status}`;
+      syncStatusIndicator.title = status === 'synced' ? 'Cloud Synced' : (status === 'syncing' ? 'Syncing...' : 'Offline');
+    }
+    if (drawerSyncBadge) {
+      drawerSyncBadge.className = `sync-badge ${status}`;
+      drawerSyncBadge.textContent = status === 'synced' ? '🟢 Cloud Synced' : (status === 'syncing' ? '🔄 Syncing...' : '⚠️ Offline Mode');
+    }
+  });
+
+  // Global Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (state.authModalOpen) closeAuthModal();
+      if (state.profileDrawerOpen) closeProfileDrawer();
+    }
+  });
+}
+
 
 
 

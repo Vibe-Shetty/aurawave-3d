@@ -67,7 +67,14 @@ export const state = {
   
   // Recent Searches & Clipboard Link
   recentSearches: loadRecentSearches(),
-  clipboardDetectedLink: null
+  clipboardDetectedLink: null,
+
+  // User Auth & Cloud Sync
+  user: null,
+  authModalOpen: false,
+  profileDrawerOpen: false,
+  syncStatus: 'synced', // 'synced' | 'syncing' | 'offline'
+  customPresets: []
 };
 
 // Recent Searches Storage Helpers

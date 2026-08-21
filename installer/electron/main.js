@@ -574,20 +574,35 @@ ipcMain.handle('uninstall-app', async (event, targetDir) => {
     try { fs.unlinkSync(path.join(app.getPath('desktop'), 'AuraWave 3D.lnk')); } catch(e){}
     try { fs.unlinkSync(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'AuraWave 3D.lnk')); } catch(e){}
 
-    event.sender.send('uninstall-progress', { status: 'Removing files...', percent: 80 });
+    event.sender.send('uninstall-progress', { status: 'Removing application & user data...', percent: 75 });
     
-    // Create detached cleanup batch file
+    // Resolve Roaming user profile directories (where Google tokens, session & onboarding flags reside)
+    const roamingUserData1 = path.join(app.getPath('appData'), 'AuraWave 3D');
+    const roamingUserData2 = path.join(app.getPath('appData'), 'aurawave-3d');
+    const localUpdaterDir = path.join(app.getPath('home'), 'AppData', 'Local', 'aurawave-3d-updater');
+
+    // Direct synchronous purge in Node if possible
+    try { if (fs.existsSync(roamingUserData1)) fs.rmSync(roamingUserData1, { recursive: true, force: true }); } catch (e) { log('WARN', `Could not immediately rm ${roamingUserData1}: ${e.message}`); }
+    try { if (fs.existsSync(roamingUserData2)) fs.rmSync(roamingUserData2, { recursive: true, force: true }); } catch (e) { log('WARN', `Could not immediately rm ${roamingUserData2}: ${e.message}`); }
+    try { if (fs.existsSync(localUpdaterDir)) fs.rmSync(localUpdaterDir, { recursive: true, force: true }); } catch (e) { log('WARN', `Could not immediately rm ${localUpdaterDir}: ${e.message}`); }
+
+    event.sender.send('uninstall-progress', { status: 'Cleaning remaining files...', percent: 90 });
+    
+    // Create detached cleanup batch file as secondary guarantee
     const cleanupScriptPath = path.join(app.getPath('temp'), 'aurawave_cleanup.bat');
     const batScript = `@echo off
 timeout /t 2 /nobreak >nul
-rmdir /s /q "${targetDir}"
+if exist "${targetDir}" rmdir /s /q "${targetDir}"
+if exist "${roamingUserData1}" rmdir /s /q "${roamingUserData1}"
+if exist "${roamingUserData2}" rmdir /s /q "${roamingUserData2}"
+if exist "${localUpdaterDir}" rmdir /s /q "${localUpdaterDir}"
 del "%~f0"
 `;
     fs.writeFileSync(cleanupScriptPath, batScript);
     pendingCleanupScript = cleanupScriptPath;
     
     event.sender.send('uninstall-progress', { status: 'Finalizing...', percent: 100 });
-    log('INFO', 'Uninstall sequence completed successfully');
+    log('INFO', 'Uninstall sequence and user data purge completed successfully');
     return { success: true };
   } catch(e) {
     log('ERROR', `Uninstall failed: ${e.message}`, e);

@@ -13,6 +13,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <!-- Google Identity Services (GIS) SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <!-- Three.js Local Bundle -->
   <script src="./three.min.js"></script>
   <script>
@@ -71,6 +74,22 @@
       window.sendRemoteLog('CALL_toggleFullscreen', { hasReal: !!window.__toggleFullscreen });
       if (window.__toggleFullscreen) window.__toggleFullscreen(e); 
     };
+    window.openAuthModal = function(e) {
+      window.sendRemoteLog('CALL_openAuthModal', { hasReal: !!window.__openAuthModal });
+      if (window.__openAuthModal) window.__openAuthModal(e);
+    };
+    window.closeAuthModal = function(e) {
+      window.sendRemoteLog('CALL_closeAuthModal', { hasReal: !!window.__closeAuthModal });
+      if (window.__closeAuthModal) window.__closeAuthModal(e);
+    };
+    window.openProfileDrawer = function(e) {
+      window.sendRemoteLog('CALL_openProfileDrawer', { hasReal: !!window.__openProfileDrawer });
+      if (window.__openProfileDrawer) window.__openProfileDrawer(e);
+    };
+    window.closeProfileDrawer = function(e) {
+      window.sendRemoteLog('CALL_closeProfileDrawer', { hasReal: !!window.__closeProfileDrawer });
+      if (window.__closeProfileDrawer) window.__closeProfileDrawer(e);
+    };
   </script>
 
   <!-- Styles -->
@@ -124,6 +143,14 @@
         </button>
         <button id="fullscreen-btn" class="icon-action-btn" title="Toggle Fullscreen (F)">
           <span>⛶</span>
+        </button>
+        <!-- User Profile / Auth Pill Button -->
+        <button id="user-profile-btn" class="user-profile-pill" title="User Profile & Cloud Sync">
+          <div class="user-avatar-wrapper">
+            <img id="user-avatar-img" src="https://api.dicebear.com/7.x/bottts/svg?seed=Guest" alt="Avatar" class="user-avatar-img">
+            <span id="sync-status-indicator" class="sync-status-indicator synced" title="Cloud Synced"></span>
+          </div>
+          <span id="user-display-name" class="user-display-name">Sign In</span>
         </button>
       </div>
 
@@ -308,6 +335,163 @@
       <button id="generate-theme-btn" class="hud-btn primary" style="justify-content: center; width: 100%; padding: 12px 20px; font-weight: 700;">
         ✨ Synthesize Atmosphere & Stream Music
       </button>
+    </div>
+  </div>
+
+  <!-- Consumer Glassmorphic Authentication Modal -->
+  <div id="auth-modal" class="modal-backdrop interactive" style="display: none;">
+    <div class="auth-modal-box">
+      
+      <!-- Top Close Button -->
+      <button id="close-auth-modal" class="auth-close-floating-btn" title="Close (Esc)">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <!-- Hero Animated Logo & Title -->
+      <div class="auth-hero-branding">
+        <div class="hero-brand-emblem">
+          <div class="emblem-core-orb"></div>
+          <div class="emblem-pulse-ring"></div>
+          <div class="emblem-pulse-ring delay"></div>
+          <!-- Official AuraWave Audio Frequency Vector Icon -->
+          <svg class="emblem-svg-logo" viewBox="0 0 32 32" width="22" height="22" fill="none">
+            <path d="M4 16h3M7 16v-4m0 4v4M11 16v-8m0 8v8M16 16v-12m0 12v12M21 16v-8m0 8v8M25 16v-4m0 4v4M25 16h3" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2 class="auth-hero-title">Welcome to <span class="gradient-text-aura">AuraWave 3D</span></h2>
+        <p class="auth-subtitle">
+          Immerse your music in real-time audio-reactive 3D worlds.
+        </p>
+      </div>
+
+      <!-- 1-Click Google Button -->
+      <button id="google-auth-btn" class="google-login-btn">
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path fill="#EA4335" d="M12 5c1.56 0 2.96.54 4.07 1.59l3.05-3.05C17.27 1.77 14.82 1 12 1 7.42 1 3.51 3.6 1.63 7.37l3.69 2.86C6.2 7.32 8.87 5 12 5z"/>
+          <path fill="#4285F4" d="M23.49 12.28c0-.82-.07-1.6-.21-2.28H12v4.51h6.47c-.28 1.48-1.13 2.74-2.4 3.58l3.69 2.87c2.16-1.99 3.41-4.92 3.41-8.68z"/>
+          <path fill="#FBBC05" d="M5.32 14.77c-.24-.71-.37-1.47-.37-2.27s.13-1.56.37-2.27L1.63 7.37C.59 9.45 0 11.66 0 14s.59 4.55 1.63 6.63l3.69-2.86z"/>
+          <path fill="#34A853" d="M12 23c3.24 0 5.95-1.08 7.93-2.91l-3.69-2.87c-1.08.72-2.45 1.16-4.24 1.16-3.13 0-5.8-2.32-6.68-5.23L1.63 16.01C3.51 19.78 7.42 23 12 23z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+
+      <!-- Divider -->
+      <div class="auth-divider">
+        <span>OR WITH CUSTOM ACCOUNT</span>
+      </div>
+
+      <!-- Auth Tab Selector (Sign In vs Register) -->
+      <div class="auth-tab-row">
+        <button id="auth-tab-signin" class="auth-tab-btn active">Sign In</button>
+        <button id="auth-tab-register" class="auth-tab-btn">Create Account</button>
+      </div>
+
+      <!-- Form Error / Success Message -->
+      <div id="auth-status-msg" class="auth-status-msg" style="display: none;"></div>
+
+      <!-- Email / Password Form -->
+      <form id="email-auth-form" class="auth-form-cluster" onsubmit="return false;">
+        <div id="display-name-group" class="auth-input-group" style="display: none;">
+          <label for="auth-name-input">Display Name</label>
+          <input type="text" id="auth-name-input" class="auth-input" placeholder="Your Name or Handle" autocomplete="name">
+        </div>
+
+        <div class="auth-input-group">
+          <label for="auth-email-input">Email Address</label>
+          <input type="email" id="auth-email-input" class="auth-input" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+
+        <div class="auth-input-group">
+          <label for="auth-password-input">Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="auth-password-input" class="auth-input" placeholder="••••••••" autocomplete="current-password" required>
+            <button type="button" id="toggle-pwd-visibility" class="pwd-visibility-btn" title="Show/Hide Password">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" id="auth-submit-btn" class="hud-btn primary auth-submit-btn">
+          Sign In
+        </button>
+      </form>
+
+      <!-- Footer Actions -->
+      <div class="auth-footer-actions">
+        <button id="continue-guest-btn" class="guest-action-pill">
+          <span>Explore as Guest</span>
+          <span class="pill-arrow">➔</span>
+        </button>
+        <button id="forgot-password-btn" class="text-link-btn">Forgot Password?</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- User Profile & Cloud Sync Drawer -->
+  <div id="profile-drawer-backdrop" class="drawer-backdrop interactive" style="display: none;">
+    <div id="profile-drawer" class="profile-drawer-panel">
+      
+      <div class="drawer-header">
+        <h3>User Profile</h3>
+        <button id="close-profile-drawer-btn" class="close-btn" title="Close (Esc)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="drawer-body custom-scrollbar">
+        
+        <!-- User Info Card -->
+        <div class="user-card-profile">
+          <img id="drawer-avatar-img" src="https://api.dicebear.com/7.x/bottts/svg?seed=Guest" alt="Profile" class="drawer-avatar-img">
+          <div class="user-card-details">
+            <h4 id="drawer-user-name">Guest Explorer</h4>
+            <p id="drawer-user-email">Not signed in (Local Session)</p>
+            <div class="sync-badge-row">
+              <span id="drawer-sync-badge" class="sync-badge synced">🟢 Cloud Synced</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zero-Knowledge Encrypted API Key Vault -->
+        <div class="drawer-section">
+          <div class="section-title-row">
+            <h4>🔐 Zero-Knowledge Vault</h4>
+            <span class="badge-mini">E2EE AES-256</span>
+          </div>
+          <p class="section-desc">
+            Your personal Google Gemini API key is encrypted on this device before sync. The server cannot read it.
+          </p>
+          <div class="vault-input-group">
+            <input type="password" id="vault-gemini-key-input" class="auth-input" placeholder="Paste Gemini API Key (AI Studio)">
+            <button id="save-vault-key-btn" class="hud-btn primary" style="padding: 8px 14px;">Save Key</button>
+          </div>
+          <span id="vault-feedback-msg" class="vault-feedback-msg"></span>
+        </div>
+
+        <!-- Custom 3D Presets & Sync Stats -->
+        <div class="drawer-section">
+          <div class="section-title-row">
+            <h4>🪐 My Custom 3D Presets</h4>
+            <button id="save-current-vibe-btn" class="btn-micro" title="Save current visualizer settings as preset">+ Save Current</button>
+          </div>
+          <div id="drawer-presets-list" class="drawer-presets-list">
+            <p class="empty-list-text">No custom presets saved yet.</p>
+          </div>
+        </div>
+
+        <!-- Account Actions -->
+        <div class="drawer-footer-cluster">
+          <button id="drawer-auth-action-btn" class="hud-btn primary full-width">Sign In / Switch Account</button>
+          <button id="drawer-logout-btn" class="hud-btn danger full-width" style="display: none;">Sign Out</button>
+        </div>
+
+      </div>
+
     </div>
   </div>
 

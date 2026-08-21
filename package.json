@@ -1,11 +1,12 @@
 {
   "name": "aurawave-3d",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "description": "An audio-reactive 3D web application inspired by **Video 4 (Viral Music Video Web App)** and **Video 6 (Insane Three.js Experiences)**.",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build:web": "vite build",
+    "pack": "npm run build:web && electron-builder --dir",
     "build:exe": "npm run build:web && electron-builder",
     "release": "node build-production-release.js",
     "start": "electron .",

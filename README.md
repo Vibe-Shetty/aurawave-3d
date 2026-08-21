@@ -1,6 +1,6 @@
 # 🌊 AuraWave 3D — AI & Three.js Music Visualizer Experience
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0%20(Latest)-8b5cf6?style=for-the-badge&logo=github)](https://github.com/Vibe-Shetty/aurawave-3d/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.5.0%20(Latest)-8b5cf6?style=for-the-badge&logo=github)](https://github.com/Vibe-Shetty/aurawave-3d/releases/latest)
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL%203D-black?style=for-the-badge&logo=three.js)](https://threejs.org/)
 [![Gemini](https://img.shields.io/badge/Google%20Gemini-3.6%20Flash-4285F4?style=for-the-badge&logo=google)](https://aistudio.google.com/)
 [![Electron](https://img.shields.io/badge/Desktop-Electron%20App-47848F?style=for-the-badge&logo=electron)](https://www.electronjs.org/)
@@ -14,18 +14,17 @@ An immersive, audio-reactive 3D web and desktop visualizer combining **Three.js 
 
 Get the official standalone installer with 1-click desktop shortcuts and clean uninstall support:
 
-👉 **[Download AuraWave 3D Setup Latest (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-Latest.exe)** • **[Download Setup v1.4.0 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.4.0/AuraWave-3D-Setup-v1.4.0.exe)**
+👉 **[Download AuraWave 3D Setup Latest (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.5.0/AuraWave-3D-Setup-Latest.exe)** • **[Download Setup v1.5.0 (.exe)](https://github.com/Vibe-Shetty/aurawave-3d/releases/download/v1.5.0/AuraWave-3D-Setup-v1.5.0.exe)**
 
 ---
 
-## 🌟 What's New in v1.4.0
+## 🌟 What's New in v1.5.0
 
-- 🎵 **Instant Ad-Free Global Music Streaming**: Built-in automated ad-eliminator that skips pre-roll video ads in `<400ms` with muted audio for a completely seamless playback experience.
-- ⏯️ **Full Transport Controls & Scrubber Seeking**: Deep integration with the native player API for instant song autoplay on click, reliable hard pause/resume, and precise timeline scrubber seeking.
-- 📻 **24/7 Curated Live Web Radio**: Built-in high-fidelity live stream presets (*Synthwave*, *Lo-Fi Chillhop*, *Tokyo Drift Phonk*, *Deep Space Ambient*, and *Electronic Grooves*).
-- 🪐 **Real-Time 3D Audio-Reactive Visualizers**: 3 dynamic WebGL scenes (*Wave Grid*, *Cyber Sphere*, *Hyperspace Tunnel*) reacting directly to audio frequencies and bass transients.
-- 🔍 **Spotify-Style Spotlight Search & UI Containment**: Full-featured search modal (`Ctrl + K`) with responsive category filter pills (*All*, *Songs*, *24/7 Radio*, *Synthwave*, *Lo-Fi*, *Phonk*), recent search quick recall, and strict text overflow truncation.
-- 📦 **Standalone Windows Desktop Application & Installer**: Single-instance desktop app with clean process management, zero background residue on exit, and a modern ~2-second setup wizard.
+- 🔑 **Official Google 1-Click Identity & Custom Accounts**: Instant OAuth authentication using Google Identity Services (GIS) with live avatar, display name, and account sync.
+- 🔐 **Zero-Knowledge Encrypted Key Vault**: Secure client-side **AES-256-GCM** encryption for personal Gemini AI keys, stored locally and decrypted only when invoking AI vibe morphs.
+- 👤 **Glassmorphic User Profile & Cloud Sync Drawer**: Real-time cloud sync status, personalized user drawer, 3D visualizer preset manager, and instant session management.
+- ✨ **Minimalist First-Launch Welcome Onboarding**: Clean, aesthetic welcome popup featuring the official vector audio frequency logo, with persistent Guest Explorer memory.
+- 🧹 **Clean-Slate Uninstaller Engine**: Complete automatic purge of all cached user session data, tokens, and onboarding flags on uninstall, guaranteeing fresh installs start clean.
 
 ---
 

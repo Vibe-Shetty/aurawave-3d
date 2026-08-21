@@ -78,17 +78,28 @@ try {
 
   // Read dynamic version from installer package.json
   const installerPkg = JSON.parse(fs.readFileSync(path.join(INSTALLER_DIR, 'package.json'), 'utf8'));
-  const currentVersion = installerPkg.version || '1.4.0';
+  const currentVersion = installerPkg.version || '1.5.0';
+
+  // Clean old installer exe artifacts before building
+  const installerDist = path.join(INSTALLER_DIR, 'dist-electron');
+  if (fs.existsSync(installerDist)) {
+    const oldFiles = fs.readdirSync(installerDist);
+    for (const f of oldFiles) {
+      if (f.endsWith('.exe')) {
+        try { fs.unlinkSync(path.join(installerDist, f)); } catch (e) {}
+      }
+    }
+  }
 
   // 4. Build Modern React Installer
   run('npm.cmd run build:exe', INSTALLER_DIR, `4/6: Compiling Setup Installer Executable (v${currentVersion})`);
 
-  // Locate compiled installer exe
-  const installerDist = path.join(INSTALLER_DIR, 'dist-electron');
+  // Locate compiled installer exe by exact version
   const files = fs.readdirSync(installerDist);
-  const exeFile = files.find(f => f.startsWith('AuraWave 3D Setup') && f.endsWith('.exe') && !f.includes('0.0.0'));
+  const exeFile = files.find(f => f.startsWith('AuraWave 3D Setup') && f.includes(currentVersion) && f.endsWith('.exe')) 
+               || files.find(f => f.startsWith('AuraWave 3D Setup') && f.endsWith('.exe') && !f.includes('0.0.0'));
   if (!exeFile) {
-    throw new Error(`Could not find compiled installer .exe in ${installerDist}`);
+    throw new Error(`Could not find compiled installer .exe for v${currentVersion} in ${installerDist}`);
   }
   const compiledExePath = path.join(installerDist, exeFile);
   console.log(`   Compiled installer artifact: ${compiledExePath}`);

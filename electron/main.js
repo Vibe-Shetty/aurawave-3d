@@ -368,14 +368,28 @@ function startProductionServer(distPath) {
       }
     });
 
-    localServer.listen(0, '127.0.0.1', () => {
-      const port = localServer.address().port;
-      activeServerPort = port;
-      writeLog('INFO', 'HTTP_SERVER', `Internal production server listening on http://127.0.0.1:${port}`);
-      resolve(port);
-    });
+    const tryListen = (portToTry) => {
+      const serverHandler = (err) => {
+        if (err.code === 'EADDRINUSE') {
+          if (portToTry === 8005) {
+            localServer.removeListener('error', serverHandler);
+            tryListen(4173);
+            return;
+          }
+        }
+        reject(err);
+      };
 
-    localServer.on('error', reject);
+      localServer.once('error', serverHandler);
+      localServer.listen(portToTry, 'localhost', () => {
+        localServer.removeListener('error', serverHandler);
+        activeServerPort = portToTry;
+        writeLog('INFO', 'HTTP_SERVER', `Internal production server listening on http://localhost:${portToTry}`);
+        resolve(portToTry);
+      });
+    };
+
+    tryListen(8005);
   });
 }
 
@@ -417,13 +431,26 @@ async function createWindow() {
   });
 
   if (!app.isPackaged) {
-    mainWindow.loadURL('http://localhost:8005');
+    const distPath = fs.existsSync(path.join(__dirname, '../dist/index.html'))
+      ? path.join(__dirname, '../dist')
+      : path.join(__dirname, '..');
+    try {
+      const ping = await fetch('http://localhost:8005').catch(() => null);
+      if (ping) {
+        mainWindow.loadURL('http://localhost:8005');
+      } else {
+        const port = await startProductionServer(distPath);
+        mainWindow.loadURL(`http://localhost:${port}`);
+      }
+    } catch (e) {
+      mainWindow.loadURL('http://localhost:8005');
+    }
     mainWindow.webContents.openDevTools();
   } else {
     const distPath = path.join(__dirname, '../dist');
     try {
       const port = await startProductionServer(distPath);
-      mainWindow.loadURL(`http://127.0.0.1:${port}`);
+      mainWindow.loadURL(`http://localhost:${port}`);
     } catch (err) {
       writeLog('ERROR', 'STARTUP', `Production server failed, falling back to file protocol: ${err.message}`);
       mainWindow.loadFile(path.join(distPath, 'index.html'));

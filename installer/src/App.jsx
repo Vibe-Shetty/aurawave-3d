@@ -454,7 +454,7 @@ function App() {
             <span className="app-dot"></span>
             <span className="app-title">AuraWave 3D</span>
             <span className="app-subtitle">{mode === 'uninstall' ? 'Uninstaller' : 'Installer'}</span>
-            <span className="app-version-tag">v1.4.0</span>
+            <span className="app-version-tag">v1.5.0</span>
           </div>
         </div>
 
